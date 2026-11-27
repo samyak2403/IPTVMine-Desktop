@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
 import {
   ArrowLeft,
+  Cpu,
+  Download,
   ExternalLink,
   Maximize,
   Minimize,
@@ -14,7 +16,13 @@ import {
   VolumeX,
 } from "lucide-react";
 import { api } from "../api";
-import type { PlaybackRequest, VegaStream } from "../types";
+import type {
+  FfmpegStatus,
+  MediaProbeResult,
+  PlaybackRequest,
+  ProxiedStream,
+  VegaStream,
+} from "../types";
 
 interface Props {
   request: PlaybackRequest;
@@ -30,6 +38,14 @@ function formatTime(sec: number): string {
   const s = total % 60;
   const pad = (n: number) => String(n).padStart(2, "0");
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+
+function needsContainerRemux(url: string): boolean {
+  const lower = url.toLowerCase();
+  return (
+    /^(rtmp|rtmps|rtsp|udp|rtp):\/\//.test(lower) ||
+    /\.(mkv|avi|flv|wmv|ts)(\?|#|$)/.test(lower)
+  );
 }
 
 export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
@@ -69,6 +85,18 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
   const [selectedLevel, setSelectedLevel] = useState(-1);
   const [audioTracks, setAudioTracks] = useState<Array<{ index: number; label: string }>>([]);
   const [selectedAudio, setSelectedAudio] = useState(0);
+  const [subtitleTracks, setSubtitleTracks] = useState<Array<{ index: number; label: string }>>([]);
+  const [selectedSubtitle, setSelectedSubtitle] = useState(-1);
+
+  const [ffmpegStatus, setFfmpegStatus] = useState<FfmpegStatus | null>(null);
+  const [installingFfmpeg, setInstallingFfmpeg] = useState(false);
+  const [probeResult, setProbeResult] = useState<MediaProbeResult | null>(null);
+  const [proxySession, setProxySession] = useState<ProxiedStream | null>(null);
+  const [useFfmpeg, setUseFfmpeg] = useState<boolean>(() =>
+    needsContainerRemux(activeStream.link)
+  );
+  const [ffmpegSeekSec, setFfmpegSeekSec] = useState(0);
+  const [ffmpegAudioIdx, setFfmpegAudioIdx] = useState(0);
 
   const [errorMsg, setErrorMsg] = useState("");
   const [statusNotice, setStatusNotice] = useState("");
@@ -78,6 +106,12 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
     !!request.episodes &&
     request.currentEpisodeIndex !== undefined &&
     request.currentEpisodeIndex + 1 < request.episodes.length;
+
+  const effectiveTime = useFfmpeg ? ffmpegSeekSec + currentTime : currentTime;
+  const effectiveDuration =
+    useFfmpeg && probeResult?.durationSec
+      ? probeResult.durationSec
+      : duration;
 
   function bumpHud() {
     setHudVisible(true);
@@ -92,8 +126,15 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
   async function saveCurrentProgress() {
     const vid = videoRef.current;
     if (!vid || request.isLive) return;
-    const posMs = Math.floor((vid.currentTime || 0) * 1000);
-    const durMs = Number.isFinite(vid.duration) ? Math.floor(vid.duration * 1000) : 0;
+    const rawTimeSec = useFfmpeg ? ffmpegSeekSec + (vid.currentTime || 0) : vid.currentTime || 0;
+    const rawDurSec =
+      useFfmpeg && probeResult?.durationSec
+        ? probeResult.durationSec
+        : Number.isFinite(vid.duration)
+          ? vid.duration
+          : 0;
+    const posMs = Math.floor(rawTimeSec * 1000);
+    const durMs = Math.floor(rawDurSec * 1000);
     if (posMs <= 0) return;
     await api.saveWatchProgress({
       title: request.title,
@@ -109,12 +150,24 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
   }
 
   useEffect(() => {
+    setFfmpegSeekSec(0);
+    setFfmpegAudioIdx(0);
+    setSelectedAudio(0);
+    setSelectedSubtitle(-1);
+    setSubtitleTracks([]);
+    setProbeResult(null);
+    setUseFfmpeg(needsContainerRemux(activeStream.link));
+  }, [activeStream.link, mirrorIdx, request.link]);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function startStream() {
       setErrorMsg("");
       setLevels([]);
-      setAudioTracks([]);
+      if (!useFfmpeg) {
+        setAudioTracks([]);
+      }
       setSelectedLevel(-1);
 
       const video = videoRef.current;
@@ -125,21 +178,30 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
         hlsRef.current = null;
       }
 
+      const ffStatus = await api.getFfmpegStatus().catch(() => null);
+      if (cancelled) return;
+      setFfmpegStatus(ffStatus);
+
+      const mergedHeaders = {
+        ...(request.headers ?? {}),
+        ...(activeStream.headers ?? {}),
+      };
+
       const lower = activeStream.link.toLowerCase();
       if (lower.startsWith("rtmp://") || lower.startsWith("rtmps://")) {
-        setErrorMsg("RTMP streams require an external player (VLC or mpv).");
-        return;
+        if (!ffStatus?.installed) {
+          setErrorMsg(
+            "RTMP streams require FFmpeg (click Download Latest FFmpeg below) or VLC / mpv."
+          );
+          return;
+        }
       }
 
-      let playUrl = activeStream.link;
+      let proxied: ProxiedStream;
       try {
-        const mergedHeaders = {
-          ...(request.headers ?? {}),
-          ...(activeStream.headers ?? {}),
-        };
-        const proxied = await api.prepareStreamProxy(activeStream.link, mergedHeaders);
+        proxied = await api.prepareStreamProxy(activeStream.link, mergedHeaders);
         if (cancelled) return;
-        playUrl = proxied.proxyUrl;
+        setProxySession(proxied);
       } catch (err) {
         if (!cancelled) setErrorMsg(String(err));
         return;
@@ -150,6 +212,78 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
         : await api.getResumePositionMs(request.link).catch(() => 0);
       if (cancelled) return;
 
+      // Probe media when FFmpeg is enabled or stream is non-HLS to discover tracks/codecs
+      let probe = probeResult;
+      const shouldProbe =
+        ffStatus?.installed &&
+        (useFfmpeg ||
+          needsContainerRemux(activeStream.link) ||
+          /\.(mp4|mkv|avi|mov|ts|flv|wmv)(\?|#|$)/i.test(lower));
+
+      if (shouldProbe && !probe) {
+        probe = await api
+          .probeMediaInfo(activeStream.link, mergedHeaders)
+          .catch(() => null);
+        if (cancelled) return;
+        if (probe) {
+          setProbeResult(probe);
+          if (probe.audioTracks.length > 0) {
+            setAudioTracks(
+              probe.audioTracks.map((t) => ({
+                index: t.index,
+                label: `${t.title} (${t.codec.toUpperCase()})`,
+              }))
+            );
+          }
+          setSubtitleTracks(
+            probe.subtitleTracks
+              .filter((s) => s.textBased)
+              .map((s) => ({
+                index: s.index,
+                label: `${s.title} (${s.codec.toUpperCase()})`,
+              }))
+          );
+          if (!useFfmpeg && probe.needsTranscode) {
+            setStatusNotice(probe.needsReason || "Remuxing with FFmpeg...");
+            setUseFfmpeg(true);
+            return;
+          }
+        }
+      }
+
+      if (useFfmpeg) {
+        if (!ffStatus?.installed) {
+          setErrorMsg(
+            "This format requires FFmpeg for in-app playback. Download Latest FFmpeg below or open in VLC/mpv."
+          );
+          return;
+        }
+        const initialSeek =
+          ffmpegSeekSec > 0
+            ? ffmpegSeekSec
+            : resumeMs > 5000 &&
+                (!probe?.durationSec || resumeMs / 1000 < probe.durationSec - 5)
+              ? Math.floor(resumeMs / 1000)
+              : 0;
+        if (initialSeek !== ffmpegSeekSec && ffmpegSeekSec === 0 && initialSeek > 0) {
+          setFfmpegSeekSec(initialSeek);
+          return;
+        }
+        const vc = (probe?.videoCodec || "").toLowerCase();
+        const copyVideo = !vc || vc === "h264" || vc === "avc1";
+        const transcodeUrl = `${proxied.transcodeBaseUrl}&audioTrack=${ffmpegAudioIdx}&startSec=${ffmpegSeekSec}&copyVideo=${copyVideo}`;
+        setStatusNotice(
+          copyVideo ? "FFmpeg Remux (Direct Video)" : `FFmpeg Live Transcode (${vc.toUpperCase()})`
+        );
+        video.src = transcodeUrl;
+        video.onloadedmetadata = () => {
+          void video.play().catch(() => {});
+        };
+        return;
+      }
+
+      setStatusNotice("");
+      const playUrl = proxied.proxyUrl;
       const looksHls =
         lower.includes(".m3u8") ||
         lower.includes("/hls/") ||
@@ -194,14 +328,18 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
         hls.on(Hls.Events.ERROR, (_, data) => {
           if (data.fatal) {
             if (data.type === Hls.ErrorTypes.NETWORK_ERROR && !looksHls) {
-              // Fallback to direct <video> tag if stream is MP4/MKV without extension
               hls.destroy();
               hlsRef.current = null;
               video.src = playUrl;
               video.onloadedmetadata = attachResume;
+            } else if (ffStatus?.installed && !useFfmpeg) {
+              hls.destroy();
+              hlsRef.current = null;
+              setStatusNotice("Auto-switching to FFmpeg Remux...");
+              setUseFfmpeg(true);
             } else {
               setErrorMsg(
-                `Playback failed (${data.details}). Try another mirror or open in VLC/mpv.`
+                `Playback failed (${data.details}). Enable FFmpeg or open in VLC/mpv.`
               );
             }
           }
@@ -221,14 +359,14 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
         hlsRef.current = null;
       }
     };
-  }, [activeStream.link, mirrorIdx, request.link]);
+  }, [activeStream.link, mirrorIdx, request.link, useFfmpeg, ffmpegSeekSec, ffmpegAudioIdx]);
 
   useEffect(() => {
     const id = window.setInterval(() => {
       void saveCurrentProgress();
     }, 10000);
     return () => window.clearInterval(id);
-  }, [activeStream.link, request.link]);
+  }, [activeStream.link, request.link, useFfmpeg, ffmpegSeekSec]);
 
   useEffect(() => {
     return () => {
@@ -252,17 +390,21 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
           break;
         case "arrowleft":
           e.preventDefault();
-          vid.currentTime = Math.max(0, vid.currentTime - 10);
+          if (useFfmpeg) setFfmpegSeekSec(Math.max(0, Math.floor(effectiveTime - 10)));
+          else vid.currentTime = Math.max(0, vid.currentTime - 10);
           break;
         case "arrowright":
           e.preventDefault();
-          vid.currentTime = vid.currentTime + 10;
+          if (useFfmpeg) setFfmpegSeekSec(Math.floor(effectiveTime + 10));
+          else vid.currentTime = vid.currentTime + 10;
           break;
         case "j":
-          vid.currentTime = Math.max(0, vid.currentTime - 30);
+          if (useFfmpeg) setFfmpegSeekSec(Math.max(0, Math.floor(effectiveTime - 30)));
+          else vid.currentTime = Math.max(0, vid.currentTime - 30);
           break;
         case "l":
-          vid.currentTime = vid.currentTime + 30;
+          if (useFfmpeg) setFfmpegSeekSec(Math.floor(effectiveTime + 30));
+          else vid.currentTime = vid.currentTime + 30;
           break;
         case "arrowup":
           e.preventDefault();
@@ -305,7 +447,7 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [hasNextEpisode, alwaysOnTop]);
+  }, [hasNextEpisode, alwaysOnTop, useFfmpeg, effectiveTime]);
 
   function handleExit() {
     void saveCurrentProgress();
@@ -345,6 +487,23 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
       window.setTimeout(() => setStatusNotice(""), 3000);
     } catch (err) {
       setErrorMsg(String(err));
+    }
+  }
+
+  async function handleInstallFfmpegAndRetry() {
+    setInstallingFfmpeg(true);
+    setErrorMsg("");
+    setStatusNotice("Downloading latest FFmpeg build...");
+    try {
+      const status = await api.installFfmpegRuntime();
+      setFfmpegStatus(status);
+      setStatusNotice("FFmpeg installed. Starting playback...");
+      setUseFfmpeg(true);
+    } catch (err) {
+      setErrorMsg(String(err));
+      setStatusNotice("");
+    } finally {
+      setInstallingFfmpeg(false);
     }
   }
 
@@ -396,6 +555,7 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
       <video
         ref={videoRef}
         className="player-video"
+        crossOrigin="anonymous"
         style={{ objectFit: fitMode }}
         onPlay={() => setPlaying(true)}
         onPause={() => {
@@ -410,13 +570,35 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
           if (videoRef.current) setDuration(videoRef.current.duration || 0);
         }}
         onError={() => {
+          if (!useFfmpeg && ffmpegStatus?.installed) {
+            if (hlsRef.current) {
+              hlsRef.current.destroy();
+              hlsRef.current = null;
+            }
+            setStatusNotice("Auto-switching to FFmpeg Remux...");
+            setUseFfmpeg(true);
+            return;
+          }
           if (!hlsRef.current) {
             setErrorMsg(
-              "Unable to decode this stream inside WebView. Try another mirror or Open in External Player (VLC/mpv)."
+              ffmpegStatus?.installed
+                ? "Unable to decode this stream even with FFmpeg. Try another mirror or Open in External Player (VLC/mpv)."
+                : "WebView could not decode this format. Install Latest FFmpeg below or open in VLC/mpv."
             );
           }
         }}
-      />
+      >
+        {proxySession && selectedSubtitle >= 0 && (
+          <track
+            key={`sub-${selectedSubtitle}-${proxySession.sessionId}`}
+            kind="subtitles"
+            src={`${proxySession.subtitleBaseUrl}&track=${selectedSubtitle}`}
+            srcLang="en"
+            label={subtitleTracks.find((s) => s.index === selectedSubtitle)?.label || "Subtitles"}
+            default
+          />
+        )}
+      </video>
 
       {/* Top HUD */}
       <div className={`player-hud-top ${hudVisible ? "visible" : "hidden"}`}>
@@ -428,11 +610,25 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
             <div style={{ fontWeight: 700, fontSize: 16 }}>{request.title}</div>
             <div className="muted">
               {activeStream.server} {activeStream.quality ? `• ${activeStream.quality}` : ""}
+              {probeResult?.videoCodec ? ` • ${probeResult.videoCodec.toUpperCase()}` : ""}
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           {statusNotice && <span className="badge">{statusNotice}</span>}
+          {ffmpegStatus?.installed && (
+            <button
+              type="button"
+              className={`btn ${useFfmpeg ? "btn-primary" : ""}`}
+              title="Toggle live FFmpeg remux / transcode engine"
+              onClick={() => {
+                setFfmpegSeekSec(useFfmpeg ? 0 : Math.floor(effectiveTime));
+                setUseFfmpeg((prev) => !prev);
+              }}
+            >
+              <Cpu size={14} /> {useFfmpeg ? "FFmpeg On" : "FFmpeg"}
+            </button>
+          )}
           {mirrors.length > 1 && (
             <select
               className="input"
@@ -459,12 +655,16 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
           <input
             type="range"
             min={0}
-            max={duration || 0}
-            value={Math.min(currentTime, duration || 0)}
+            max={effectiveDuration || 0}
+            value={Math.min(effectiveTime, effectiveDuration || 0)}
             onChange={(e) => {
               const t = Number(e.target.value);
-              if (videoRef.current) videoRef.current.currentTime = t;
-              setCurrentTime(t);
+              if (useFfmpeg) {
+                setFfmpegSeekSec(Math.floor(t));
+              } else {
+                if (videoRef.current) videoRef.current.currentTime = t;
+                setCurrentTime(t);
+              }
             }}
             style={{ width: "100%", accentColor: "#ffc062" }}
           />
@@ -517,13 +717,13 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
             <span className="muted" style={{ minWidth: 145, fontVariantNumeric: "tabular-nums" }}>
               {request.isLive
                 ? "LIVE"
-                : duration > 0
-                  ? `${formatTime(currentTime)} / ${formatTime(duration)} (-${formatTime(Math.max(0, duration - currentTime))})`
-                  : formatTime(currentTime)}
+                : effectiveDuration > 0
+                  ? `${formatTime(effectiveTime)} / ${formatTime(effectiveDuration)} (-${formatTime(Math.max(0, effectiveDuration - effectiveTime))})`
+                  : formatTime(effectiveTime)}
             </span>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             {hasNextEpisode && (
               <button
                 className="btn"
@@ -557,17 +757,42 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
             {audioTracks.length > 1 && (
               <select
                 className="input"
-                style={{ width: 120, padding: "6px 8px" }}
-                value={selectedAudio}
+                style={{ width: 145, padding: "6px 8px" }}
+                value={useFfmpeg ? ffmpegAudioIdx : selectedAudio}
                 onChange={(e) => {
                   const idx = Number(e.target.value);
                   setSelectedAudio(idx);
-                  if (hlsRef.current) hlsRef.current.audioTrack = idx;
+                  if (useFfmpeg) {
+                    setFfmpegSeekSec(Math.floor(effectiveTime));
+                    setFfmpegAudioIdx(idx);
+                  } else if (hlsRef.current) {
+                    hlsRef.current.audioTrack = idx;
+                  } else if (ffmpegStatus?.installed) {
+                    setFfmpegSeekSec(Math.floor(effectiveTime));
+                    setFfmpegAudioIdx(idx);
+                    setUseFfmpeg(true);
+                  }
                 }}
               >
                 {audioTracks.map((a) => (
                   <option key={a.index} value={a.index}>
                     {a.label}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {subtitleTracks.length > 0 && (
+              <select
+                className="input"
+                style={{ width: 135, padding: "6px 8px" }}
+                value={selectedSubtitle}
+                onChange={(e) => setSelectedSubtitle(Number(e.target.value))}
+              >
+                <option value={-1}>Subtitles: Off</option>
+                {subtitleTracks.map((s) => (
+                  <option key={s.index} value={s.index}>
+                    {s.label}
                   </option>
                 ))}
               </select>
@@ -621,12 +846,34 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
       {/* Error Recovery Modal */}
       {errorMsg && (
         <div className="player-error-backdrop">
-          <div className="card" style={{ maxWidth: 460, display: "grid", gap: 14 }}>
+          <div className="card" style={{ maxWidth: 480, display: "grid", gap: 14 }}>
             <h2 style={{ margin: 0, fontSize: 18 }}>Playback Error</h2>
             <div className="error-text">{errorMsg}</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {ffmpegStatus?.installed ? (
+                !useFfmpeg && (
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => {
+                      setErrorMsg("");
+                      setUseFfmpeg(true);
+                    }}
+                  >
+                    <Cpu size={14} /> Play with FFmpeg Remux
+                  </button>
+                )
+              ) : (
+                <button
+                  className="btn btn-primary"
+                  disabled={installingFfmpeg}
+                  onClick={() => void handleInstallFfmpegAndRetry()}
+                >
+                  <Download size={14} />{" "}
+                  {installingFfmpeg ? "Installing FFmpeg..." : "Download Latest FFmpeg"}
+                </button>
+              )}
               <button
-                className="btn btn-primary"
+                className="btn"
                 onClick={() => {
                   setErrorMsg("");
                   setMirrorIdx((i) => i);

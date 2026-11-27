@@ -33,6 +33,52 @@ export interface AppSettings {
   developerTestMode: boolean;
   externalPlayerPath: string;
   downloadDir: string;
+  ffmpegPath: string;
+}
+
+export interface FfmpegStatus {
+  installed: boolean;
+  version?: string | null;
+  shortVersion?: string | null;
+  ffmpegPath?: string | null;
+  ffprobePath?: string | null;
+  source: string;
+  upstreamTag?: string | null;
+  upstreamVersion?: string | null;
+  updateAvailable: boolean;
+  upstreamUrl: string;
+}
+
+export interface MediaAudioTrack {
+  index: number;
+  streamIndex: number;
+  codec: string;
+  language: string;
+  title: string;
+  channels: number;
+}
+
+export interface MediaSubtitleTrack {
+  index: number;
+  streamIndex: number;
+  codec: string;
+  language: string;
+  title: string;
+  textBased: boolean;
+}
+
+export interface MediaProbeResult {
+  formatName: string;
+  durationSec?: number | null;
+  bitRate?: number | null;
+  sizeBytes?: number | null;
+  videoCodec?: string | null;
+  width?: number | null;
+  height?: number | null;
+  needsTranscode: boolean;
+  needsReason?: string | null;
+  audioTracks: MediaAudioTrack[];
+  subtitleTracks: MediaSubtitleTrack[];
 }
 
 export interface DnsTestResult {
@@ -168,6 +214,8 @@ export interface FallbackResult {
 
 export interface ProxiedStream {
   proxyUrl: string;
+  transcodeBaseUrl: string;
+  subtitleBaseUrl: string;
   sessionId: string;
 }
 

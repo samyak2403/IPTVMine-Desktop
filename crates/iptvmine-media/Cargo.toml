@@ -6,9 +6,11 @@ license.workspace = true
 
 [dependencies]
 axum = "0.8"
+dirs = "6"
 iptvmine-core.workspace = true
 reqwest.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util = { version = "0.7", features = ["io"] }

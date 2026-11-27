@@ -1,14 +1,20 @@
 use iptvmine_core::{clean_title, is_valid_stream_scheme, sanitize_filename, DownloadStatus, DownloadTask};
+use iptvmine_media::ffmpeg::{
+    apply_no_window_tokio, build_hls_download_args, probe_media, resolve_ffmpeg_exe,
+    resolve_ffprobe_exe,
+};
 use iptvmine_storage::Storage;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, RANGE};
 use reqwest::Client;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::Command as TokioCommand;
 use tokio::sync::Semaphore;
 use uuid::Uuid;
 
@@ -36,6 +42,7 @@ pub struct DownloadManager {
     semaphore: Arc<Semaphore>,
     default_dir: PathBuf,
     cancel_flags: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
+    custom_ffmpeg_path: Arc<RwLock<Option<String>>>,
 }
 
 impl DownloadManager {
@@ -49,6 +56,13 @@ impl DownloadManager {
             semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS)),
             default_dir,
             cancel_flags: Arc::new(Mutex::new(HashMap::new())),
+            custom_ffmpeg_path: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    pub fn set_ffmpeg_path(&self, path: Option<String>) {
+        if let Ok(mut guard) = self.custom_ffmpeg_path.write() {
+            *guard = path.filter(|s| !s.trim().is_empty());
         }
     }
 
@@ -190,6 +204,7 @@ impl DownloadManager {
         let client = self.client.clone();
         let semaphore = self.semaphore.clone();
         let cancel_flags = self.cancel_flags.clone();
+        let custom_ffmpeg_path = self.custom_ffmpeg_path.clone();
 
         let flag = Arc::new(AtomicBool::new(false));
         if let Ok(mut map) = cancel_flags.lock() {
@@ -218,7 +233,19 @@ impl DownloadManager {
             let _ = storage.upsert_download(&task);
             on_event(&task);
 
-            let result = run_http_download(&client, &mut task, &flag, &storage, &*on_event).await;
+            let custom_ff = custom_ffmpeg_path.read().ok().and_then(|g| g.clone());
+            let result = if is_segmented_playlist_url(&task.download_url) {
+                run_hls_ffmpeg_download(
+                    custom_ff.as_deref(),
+                    &mut task,
+                    &flag,
+                    &storage,
+                    &*on_event,
+                )
+                .await
+            } else {
+                run_http_download(&client, &mut task, &flag, &storage, &*on_event).await
+            };
             if let Ok(mut map) = cancel_flags.lock() {
                 map.remove(&task.id);
             }
@@ -358,6 +385,137 @@ where
     }
 
     writer.flush().await?;
+    Ok(())
+}
+
+fn is_segmented_playlist_url(url_str: &str) -> bool {
+    let lower = url_str
+        .split('?')
+        .next()
+        .unwrap_or(url_str)
+        .split('#')
+        .next()
+        .unwrap_or(url_str)
+        .to_ascii_lowercase();
+    lower.ends_with(".m3u8") || lower.ends_with(".mpd") || url_str.to_ascii_lowercase().contains(".m3u8?")
+}
+
+async fn run_hls_ffmpeg_download<F>(
+    custom_ffmpeg_path: Option<&str>,
+    task: &mut DownloadTask,
+    cancel_flag: &AtomicBool,
+    storage: &Storage,
+    on_event: &F,
+) -> Result<(), DownloadError>
+where
+    F: Fn(&DownloadTask),
+{
+    let Some(ffmpeg_exe) = resolve_ffmpeg_exe(custom_ffmpeg_path) else {
+        return Err(DownloadError::Io(std::io::Error::other(
+            "HLS (.m3u8) downloads require FFmpeg. Download FFmpeg in Preferences.",
+        )));
+    };
+
+    let hdrs = task.headers.clone().unwrap_or_default();
+    let known_duration = if let Some(ffprobe_exe) = resolve_ffprobe_exe(custom_ffmpeg_path) {
+        probe_media(&ffprobe_exe, &task.download_url, &hdrs)
+            .await
+            .ok()
+            .and_then(|p| p.duration_sec)
+            .unwrap_or(0.0)
+    } else {
+        0.0
+    };
+
+    let dest = Path::new(&task.save_path);
+    if let Some(parent) = dest.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+
+    let args = build_hls_download_args(&task.download_url, &hdrs, dest);
+    let mut cmd = TokioCommand::new(&ffmpeg_exe);
+    cmd.args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    apply_no_window_tokio(&mut cmd);
+
+    let mut child = cmd.spawn()?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| std::io::Error::other("ffmpeg stdout unavailable"))?;
+    let mut lines = BufReader::new(stdout).lines();
+
+    let mut last_emit = Instant::now();
+    let mut out_bytes: u64 = 0;
+    let mut out_time_sec: f64 = 0.0;
+    let mut current_speed = String::new();
+
+    loop {
+        if cancel_flag.load(Ordering::Relaxed) {
+            let _ = child.kill().await;
+            return Err(DownloadError::Io(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "cancelled",
+            )));
+        }
+
+        match tokio::time::timeout(Duration::from_millis(250), lines.next_line()).await {
+            Ok(Ok(Some(line))) => {
+                if let Some((k, v)) = line.split_once('=') {
+                    match k.trim() {
+                        "total_size" => {
+                            if let Ok(b) = v.trim().parse::<u64>() {
+                                out_bytes = b;
+                            }
+                        }
+                        "out_time_us" => {
+                            if let Ok(us) = v.trim().parse::<f64>() {
+                                out_time_sec = us / 1_000_000.0;
+                            }
+                        }
+                        "speed" => {
+                            let s = v.trim();
+                            if !s.is_empty() && s != "N/A" {
+                                current_speed = format!("FFmpeg {s}");
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Ok(Ok(None)) => break,
+            Ok(Err(e)) => return Err(DownloadError::Io(e)),
+            Err(_) => {}
+        }
+
+        if last_emit.elapsed() >= Duration::from_millis(400) {
+            task.downloaded_bytes = out_bytes;
+            if !current_speed.is_empty() {
+                task.speed = current_speed.clone();
+            }
+            if known_duration > 0.0 {
+                task.progress = ((out_time_sec / known_duration) * 100.0).min(99.5) as f32;
+            }
+            let _ = storage.upsert_download(task);
+            on_event(task);
+            last_emit = Instant::now();
+        }
+    }
+
+    let status = child.wait().await?;
+    if !status.success() {
+        return Err(DownloadError::Io(std::io::Error::other(format!(
+            "ffmpeg remux exited with {}",
+            status
+        ))));
+    }
+    if let Ok(meta) = tokio::fs::metadata(dest).await {
+        task.downloaded_bytes = meta.len();
+        task.total_bytes = meta.len();
+    }
     Ok(())
 }
 

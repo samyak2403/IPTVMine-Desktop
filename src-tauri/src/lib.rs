@@ -7,7 +7,11 @@ use iptvmine_downloader::{open_containing_folder, resolve_download_dir, Download
 use iptvmine_m3u::{
     fetch_playlist_text, inspect_provider_url, parse_playlist, ChannelEngine, DetectionResult,
 };
-use iptvmine_media::{launch_external_player as spawn_external_player, ProxiedStream, StreamProxy};
+use iptvmine_media::{
+    check_ffmpeg_status_with_upstream, detect_ffmpeg_status,
+    install_latest_ffmpeg as download_latest_ffmpeg, launch_external_player as spawn_external_player,
+    probe_media, FfmpegStatus, MediaProbeResult, ProxiedStream, StreamProxy,
+};
 use iptvmine_net::{DnsTestResult, DohState};
 use iptvmine_storage::Storage;
 use iptvmine_updater::{check_latest_release, UpdateCheckResult};
@@ -486,7 +490,77 @@ fn save_app_settings(settings: AppSettings, state: State<'_, AppState>) -> Resul
     state
         .vega_runner
         .set_developer_test_mode(settings.developer_test_mode);
+    let ff = if settings.ffmpeg_path.trim().is_empty() {
+        None
+    } else {
+        Some(settings.ffmpeg_path.clone())
+    };
+    state.stream_proxy.set_ffmpeg_path(ff.clone());
+    state.download_manager.set_ffmpeg_path(ff);
     Ok(settings)
+}
+
+#[tauri::command]
+fn get_ffmpeg_status(state: State<'_, AppState>) -> FfmpegStatus {
+    let settings = state.storage.get_app_settings().unwrap_or_default();
+    let custom = if settings.ffmpeg_path.trim().is_empty() {
+        None
+    } else {
+        Some(settings.ffmpeg_path.as_str())
+    };
+    detect_ffmpeg_status(custom)
+}
+
+#[tauri::command]
+async fn check_ffmpeg_upstream_status(state: State<'_, AppState>) -> Result<FfmpegStatus, String> {
+    let settings = state.storage.get_app_settings().unwrap_or_default();
+    let custom = if settings.ffmpeg_path.trim().is_empty() {
+        None
+    } else {
+        Some(settings.ffmpeg_path.as_str())
+    };
+    Ok(check_ffmpeg_status_with_upstream(&state.http_client, custom).await)
+}
+
+#[tauri::command]
+async fn install_ffmpeg_runtime(state: State<'_, AppState>) -> Result<FfmpegStatus, String> {
+    let status = download_latest_ffmpeg(&state.http_client)
+        .await
+        .map_err(|e| e.to_string())?;
+    let settings = state.storage.get_app_settings().unwrap_or_default();
+    let ff = if settings.ffmpeg_path.trim().is_empty() {
+        None
+    } else {
+        Some(settings.ffmpeg_path)
+    };
+    state.stream_proxy.set_ffmpeg_path(ff.clone());
+    state.download_manager.set_ffmpeg_path(ff);
+    Ok(status)
+}
+
+#[tauri::command]
+async fn probe_media_info(
+    target: String,
+    headers: Option<HashMap<String, String>>,
+    state: State<'_, AppState>,
+) -> Result<MediaProbeResult, String> {
+    let settings = state.storage.get_app_settings().unwrap_or_default();
+    let custom = if settings.ffmpeg_path.trim().is_empty() {
+        None
+    } else {
+        Some(settings.ffmpeg_path.as_str())
+    };
+    let status = detect_ffmpeg_status(custom);
+    let Some(probe_exe) = status.ffprobe_path else {
+        return Err("ffprobe is not installed. Install FFmpeg in Preferences to inspect tracks and codecs.".into());
+    };
+    probe_media(
+        std::path::Path::new(&probe_exe),
+        &target,
+        &headers.unwrap_or_default(),
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -764,6 +838,13 @@ pub fn run() {
             };
             let download_manager =
                 DownloadManager::new(storage.clone(), http_client.clone(), custom_dl_dir);
+            let custom_ff = if settings.ffmpeg_path.trim().is_empty() {
+                None
+            } else {
+                Some(settings.ffmpeg_path.clone())
+            };
+            stream_proxy.set_ffmpeg_path(custom_ff.clone());
+            download_manager.set_ffmpeg_path(custom_ff);
 
             app.manage(AppState {
                 storage,
@@ -817,6 +898,10 @@ pub fn run() {
             get_resume_position_ms,
             delete_watch_history_entry,
             prepare_stream_proxy,
+            get_ffmpeg_status,
+            check_ffmpeg_upstream_status,
+            install_ffmpeg_runtime,
+            probe_media_info,
             enqueue_download,
             list_downloads,
             pause_download,

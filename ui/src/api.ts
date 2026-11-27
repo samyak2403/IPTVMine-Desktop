@@ -26,6 +26,8 @@ import type {
   DnsTestResult,
   DownloadTask,
   FallbackResult,
+  FfmpegStatus,
+  MediaProbeResult,
   Provider,
   ProviderType,
   ProxiedStream,
@@ -150,6 +152,14 @@ export const api = {
   prepareStreamProxy: (streamUrl: string, headers?: Record<string, string>) =>
     invoke<ProxiedStream>("prepare_stream_proxy", {
       streamUrl,
+      headers: headers ?? null,
+    }),
+  getFfmpegStatus: () => invoke<FfmpegStatus>("get_ffmpeg_status"),
+  checkFfmpegUpstreamStatus: () => invoke<FfmpegStatus>("check_ffmpeg_upstream_status"),
+  installFfmpegRuntime: () => invoke<FfmpegStatus>("install_ffmpeg_runtime"),
+  probeMediaInfo: (target: string, headers?: Record<string, string>) =>
+    invoke<MediaProbeResult>("probe_media_info", {
+      target,
       headers: headers ?? null,
     }),
   launchExternalPlayer: (

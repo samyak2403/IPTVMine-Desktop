@@ -1,3 +1,5 @@
+pub mod ffmpeg;
+
 use axum::{
     body::Body,
     extract::{Query, State},
@@ -6,6 +8,11 @@ use axum::{
     routing::get,
     Router,
 };
+pub use ffmpeg::{
+    check_ffmpeg_status_with_upstream, detect_ffmpeg_status, install_latest_ffmpeg, probe_media,
+    resolve_ffmpeg_exe, resolve_ffprobe_exe, FfmpegStatus, MediaAudioTrack, MediaProbeResult,
+    MediaSubtitleTrack,
+};
 use iptvmine_core::is_valid_stream_scheme;
 use reqwest::header::{HeaderMap as ReqHeaderMap, HeaderName, HeaderValue};
 use reqwest::Client;
@@ -13,10 +20,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::pin::Pin;
+use std::process::{Command, Stdio};
 use std::sync::{Arc, RwLock};
+use std::task::{Context as TaskContext, Poll};
+use std::time::Duration;
 use thiserror::Error;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, ReadBuf};
+use tokio::process::{Child, ChildStdout, Command as TokioCommand};
 use tokio_util::io::ReaderStream;
 use url::Url;
 use uuid::Uuid;
@@ -27,7 +38,9 @@ pub enum MediaError {
     InvalidUrl(String),
     #[error("external player not found; install VLC or mpv or configure path in Settings")]
     ExternalPlayerNotFound,
-    #[error("failed to launch external player: {0}")]
+    #[error("ffmpeg error: {0}")]
+    Ffmpeg(String),
+    #[error("failed to launch media process: {0}")]
     Spawn(#[from] std::io::Error),
 }
 
@@ -41,12 +54,14 @@ struct ProxySession {
 pub struct StreamProxy {
     port: u16,
     sessions: Arc<RwLock<HashMap<String, ProxySession>>>,
+    custom_ffmpeg_path: Arc<RwLock<Option<String>>>,
 }
 
 #[derive(Clone)]
 struct ProxyAppState {
     client: Client,
     sessions: Arc<RwLock<HashMap<String, ProxySession>>>,
+    custom_ffmpeg_path: Arc<RwLock<Option<String>>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -55,24 +70,45 @@ struct StreamQuery {
     url: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscodeQuery {
+    session: String,
+    audio_track: Option<usize>,
+    start_sec: Option<f64>,
+    copy_video: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SubtitleQuery {
+    session: String,
+    track: Option<usize>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProxiedStream {
     pub proxy_url: String,
+    pub transcode_base_url: String,
+    pub subtitle_base_url: String,
     pub session_id: String,
 }
 
 impl StreamProxy {
     pub async fn start(client: Client) -> Self {
         let sessions = Arc::new(RwLock::new(HashMap::new()));
+        let custom_ffmpeg_path = Arc::new(RwLock::new(None));
         let state = ProxyAppState {
             client,
             sessions: sessions.clone(),
+            custom_ffmpeg_path: custom_ffmpeg_path.clone(),
         };
 
         let app = Router::new()
             .route("/stream", get(handle_stream))
             .route("/local", get(handle_local_file))
+            .route("/transcode", get(handle_transcode))
+            .route("/subtitles", get(handle_subtitles))
             .with_state(state);
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -87,6 +123,13 @@ impl StreamProxy {
         Self {
             port: addr.port(),
             sessions,
+            custom_ffmpeg_path,
+        }
+    }
+
+    pub fn set_ffmpeg_path(&self, path: Option<String>) {
+        if let Ok(mut guard) = self.custom_ffmpeg_path.write() {
+            *guard = path.filter(|s| !s.trim().is_empty());
         }
     }
 
@@ -126,6 +169,14 @@ impl StreamProxy {
         );
         Ok(ProxiedStream {
             proxy_url,
+            transcode_base_url: format!(
+                "http://127.0.0.1:{}/transcode?session={}",
+                self.port, session_id
+            ),
+            subtitle_base_url: format!(
+                "http://127.0.0.1:{}/subtitles?session={}",
+                self.port, session_id
+            ),
             session_id,
         })
     }
@@ -154,6 +205,14 @@ impl StreamProxy {
         );
         Ok(ProxiedStream {
             proxy_url,
+            transcode_base_url: format!(
+                "http://127.0.0.1:{}/transcode?session={}",
+                self.port, session_id
+            ),
+            subtitle_base_url: format!(
+                "http://127.0.0.1:{}/subtitles?session={}",
+                self.port, session_id
+            ),
             session_id,
         })
     }
@@ -502,6 +561,138 @@ fn find_external_player(configured_path: Option<&str>) -> Option<PathBuf> {
     None
 }
 
+struct ChildStdoutReader {
+    _child: Child,
+    stdout: ChildStdout,
+}
+
+impl AsyncRead for ChildStdoutReader {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.stdout).poll_read(cx, buf)
+    }
+}
+
+async fn handle_transcode(
+    State(state): State<ProxyAppState>,
+    Query(query): Query<TranscodeQuery>,
+) -> Response {
+    let session = {
+        let Ok(map) = state.sessions.read() else {
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "session lock failed");
+        };
+        map.get(&query.session).cloned()
+    };
+    let Some(session) = session else {
+        return error_response(StatusCode::NOT_FOUND, "unknown media session");
+    };
+
+    let custom_ffmpeg = state
+        .custom_ffmpeg_path
+        .read()
+        .ok()
+        .and_then(|g| g.clone());
+    let Some(ffmpeg_exe) = ffmpeg::resolve_ffmpeg_exe(custom_ffmpeg.as_deref()) else {
+        return error_response(
+            StatusCode::PRECONDITION_REQUIRED,
+            "FFmpeg is not installed. Download FFmpeg in Preferences to play this format.",
+        );
+    };
+
+    let args = ffmpeg::build_transcode_args(
+        &session.base_url,
+        &session.headers,
+        query.audio_track.unwrap_or(0),
+        query.start_sec.unwrap_or(0.0).max(0.0),
+        query.copy_video.unwrap_or(true),
+    );
+
+    let mut cmd = TokioCommand::new(&ffmpeg_exe);
+    cmd.args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    ffmpeg::apply_no_window_tokio(&mut cmd);
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+    };
+    let Some(stdout) = child.stdout.take() else {
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "ffmpeg stdout unavailable");
+    };
+
+    let reader = ChildStdoutReader {
+        _child: child,
+        stdout,
+    };
+    let stream = ReaderStream::with_capacity(reader, 64 * 1024);
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .header(header::CONTENT_TYPE, "video/mp4")
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Body::from_stream(stream))
+        .unwrap_or_else(|_| error_response(StatusCode::INTERNAL_SERVER_ERROR, "stream error"))
+}
+
+async fn handle_subtitles(
+    State(state): State<ProxyAppState>,
+    Query(query): Query<SubtitleQuery>,
+) -> Response {
+    let session = {
+        let Ok(map) = state.sessions.read() else {
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "session lock failed");
+        };
+        map.get(&query.session).cloned()
+    };
+    let Some(session) = session else {
+        return error_response(StatusCode::NOT_FOUND, "unknown media session");
+    };
+
+    let custom_ffmpeg = state
+        .custom_ffmpeg_path
+        .read()
+        .ok()
+        .and_then(|g| g.clone());
+    let Some(ffmpeg_exe) = ffmpeg::resolve_ffmpeg_exe(custom_ffmpeg.as_deref()) else {
+        return error_response(StatusCode::PRECONDITION_REQUIRED, "FFmpeg is not installed");
+    };
+
+    let args = ffmpeg::build_subtitle_vtt_args(
+        &session.base_url,
+        &session.headers,
+        query.track.unwrap_or(0),
+    );
+    let mut cmd = TokioCommand::new(&ffmpeg_exe);
+    cmd.args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    ffmpeg::apply_no_window_tokio(&mut cmd);
+
+    let Ok(Ok(out)) = tokio::time::timeout(Duration::from_secs(20), cmd.output()).await else {
+        return error_response(StatusCode::GATEWAY_TIMEOUT, "subtitle extraction timed out");
+    };
+    if !out.status.success() || out.stdout.is_empty() {
+        return error_response(StatusCode::NOT_FOUND, "subtitle track unavailable");
+    }
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .header(header::CONTENT_TYPE, "text/vtt; charset=utf-8")
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Body::from(out.stdout))
+        .unwrap_or_else(|_| error_response(StatusCode::INTERNAL_SERVER_ERROR, "build error"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -520,5 +711,49 @@ mod tests {
     fn rejects_invalid_scheme_for_external_player() {
         let err = launch_external_player("javascript:alert(1)", "x", &HashMap::new(), None);
         assert!(matches!(err, Err(MediaError::InvalidUrl(_))));
+    }
+
+    #[test]
+    fn parses_ffprobe_tracks_and_builds_sanitized_ffmpeg_args() {
+        let sample = serde_json::json!({
+            "format": {
+                "format_name": "matroska,webm",
+                "duration": "1320.5",
+                "bit_rate": "2400000",
+                "size": "420000000"
+            },
+            "streams": [
+                { "index": 0, "codec_type": "video", "codec_name": "h264", "width": 1920, "height": 1080 },
+                { "index": 1, "codec_type": "audio", "codec_name": "ac3", "channels": 6, "tags": { "language": "hin", "title": "Hindi 5.1" } },
+                { "index": 2, "codec_type": "audio", "codec_name": "aac", "channels": 2, "tags": { "language": "eng" } },
+                { "index": 3, "codec_type": "subtitle", "codec_name": "subrip", "tags": { "language": "eng", "title": "English" } }
+            ]
+        });
+        let parsed = ffmpeg::parse_ffprobe_json(&sample, "https://cdn.example/video.mkv");
+        assert!(parsed.needs_transcode);
+        assert_eq!(parsed.audio_tracks.len(), 2);
+        assert_eq!(parsed.audio_tracks[0].title, "Hindi 5.1");
+        assert_eq!(parsed.audio_tracks[1].title, "ENG");
+        assert_eq!(parsed.subtitle_tracks.len(), 1);
+        assert!(parsed.subtitle_tracks[0].text_based);
+
+        let mut hdrs = HashMap::new();
+        hdrs.insert("User-Agent".into(), "Agent\r\nInjected: bad".into());
+        hdrs.insert("Referer".into(), "https://ref.example/".into());
+        let args = ffmpeg::build_transcode_args("https://cdn.example/video.mkv", &hdrs, 1, 95.5, true);
+        assert!(args.windows(2).any(|w| w == ["-ss", "95.50"]));
+        assert!(args.windows(2).any(|w| w == ["-user_agent", "AgentInjected: bad"]));
+        assert!(args.windows(2).any(|w| w == ["-map", "0:a:1?"]));
+        assert!(args.windows(2).any(|w| w == ["-c:v", "copy"]));
+
+        let tags = serde_json::json!([
+            { "name": "v0.6.1" },
+            { "name": "n9.2-dev" },
+            { "name": "n8.1" },
+            { "name": "n9.1" }
+        ]);
+        let picked = ffmpeg::pick_latest_upstream_ffmpeg_tag(&tags).unwrap();
+        assert_eq!(picked, ("n9.1".into(), "9.1".into()));
+        assert_eq!(ffmpeg::parse_semver_tuple("ffmpeg version 9.1-essentials_build"), Some((9, 1, 0)));
     }
 }

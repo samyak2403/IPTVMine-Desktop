@@ -336,6 +336,8 @@ pub struct AppSettings {
     pub external_player_path: String,
     #[serde(default)]
     pub download_dir: String,
+    #[serde(default)]
+    pub ffmpeg_path: String,
 }
 
 impl Default for AppSettings {
@@ -348,6 +350,7 @@ impl Default for AppSettings {
             developer_test_mode: false,
             external_player_path: String::new(),
             download_dir: String::new(),
+            ffmpeg_path: String::new(),
         }
     }
 }
