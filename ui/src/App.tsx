@@ -514,7 +514,9 @@ export function App() {
       const res = await api.inspectProvider(newUrl.trim());
       setDetectedType(res.providerType);
       setManualTypeOverride(false);
-      setInspectInfo(`Detected ${res.providerType} (${res.sourceKind})`);
+      setInspectInfo(
+        `Detected ${res.providerType === "VEGA" ? "SOURCE" : res.providerType} (${res.sourceKind})`
+      );
     } catch (err) {
       setInspectInfo("");
       setProviderError(String(err));
@@ -525,7 +527,7 @@ export function App() {
     e.preventDefault();
     const trimmedUrl = newUrl.trim();
     if (!trimmedUrl) {
-      setProviderError("Please enter a playlist, Vega manifest, @handle, or video URL.");
+      setProviderError("Please enter a playlist, extension source, @handle, or video URL.");
       return;
     }
     if (savingProvider) return;
@@ -583,11 +585,11 @@ export function App() {
         try {
           const exts = await api.listVegaExtensions(trimmedUrl, true);
           setProviderSuccess(
-            `Vega provider saved. Loaded ${exts.length} extension(s) — open Movies or Extensions.`
+            `Source saved. Loaded ${exts.length} extension(s) — open Movies or Extensions.`
           );
           void refreshHomeFeed(updated);
         } catch (vegaErr) {
-          setProviderSuccess("Vega provider saved.");
+          setProviderSuccess("Source saved.");
           setProviderError(`Manifest fetch failed: ${String(vegaErr)}`);
         }
       } else {

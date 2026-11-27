@@ -246,7 +246,7 @@ export function PreferencesView({
                 Developer Test Mode
               </label>
               <span className="pref-row-desc">
-                Allow LAN and loopback HTTP Vega manifests during local extension development.
+                Allow LAN and loopback HTTP source manifests during local extension development.
               </span>
             </div>
             <input

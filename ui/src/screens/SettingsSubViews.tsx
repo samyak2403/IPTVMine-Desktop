@@ -34,7 +34,7 @@ export function AboutView({ onBack }: { onBack: () => void }) {
           <strong>Version:</strong> 0.1.0 (Rust + Tauri v2 + React + TypeScript)
         </div>
         <div className="muted">
-          Desktop edition of IPTVMine Pro supporting M3U/JSON Live TV, Vega JS/TS extensions, DoH DNS bypass, local downloads, and watch history.
+          Desktop edition of IPTVMine Pro supporting M3U/JSON Live TV, JS/TS extension sources, DoH DNS bypass, local downloads, and watch history.
         </div>
         <div>
           <button className="btn btn-primary" disabled={checking} onClick={() => void checkUpdates()}>
@@ -160,7 +160,7 @@ export function LegalView({ onBack }: { onBack: () => void }) {
       <div className="card" style={{ lineHeight: 1.6 }}>
         {tab === "disclaimer" && (
           <p style={{ margin: 0 }}>
-            IPTVMine Desktop does not host, store, index, or distribute any media content. All playlists, Vega extension scripts, and video streams are configured and sourced solely by the user. Users are responsible for verifying that they have the right to access any third-party sources they configure.
+            IPTVMine Desktop does not host, store, index, or distribute any media content. All playlists, extension scripts, and video streams are configured and sourced solely by the user. Users are responsible for verifying that they have the right to access any third-party sources they configure.
           </p>
         )}
         {tab === "privacy" && (
@@ -170,7 +170,7 @@ export function LegalView({ onBack }: { onBack: () => void }) {
         )}
         {tab === "terms" && (
           <p style={{ margin: 0 }}>
-            IPTVMine Desktop is provided &ldquo;as is&rdquo; under the MIT License without warranty of any kind. Third-party Vega JavaScript extensions execute inside a sandboxed runtime, and you are solely responsible for trusting any external provider repositories you install.
+            IPTVMine Desktop is provided &ldquo;as is&rdquo; under the MIT License without warranty of any kind. Third-party JavaScript extension sources execute inside a sandboxed runtime, and you are solely responsible for trusting any external source repositories you install.
           </p>
         )}
       </div>

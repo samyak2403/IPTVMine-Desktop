@@ -18,9 +18,15 @@ import type { PlaybackRequest, Provider, ProviderType } from "../types";
 
 const PROVIDER_TYPES: { value: ProviderType; label: string }[] = [
   { value: "IPTV", label: "IPTV" },
-  { value: "VEGA", label: "VEGA" },
+  { value: "VEGA", label: "SOURCE" },
   { value: "VIDEO", label: "VIDEO" },
 ];
+
+const PROVIDER_TYPE_BADGE: Record<ProviderType, string> = {
+  IPTV: "IPTV",
+  VEGA: "SOURCE",
+  VIDEO: "VIDEO",
+};
 
 const SOURCE_TYPE_COPY: Record<
   ProviderType,
@@ -44,13 +50,13 @@ const SOURCE_TYPE_COPY: Record<
     updateCta: "Update IPTV Source",
   },
   VEGA: {
-    newHeading: "New Vega Extension Source",
-    editHeading: "Update Vega Source",
-    urlLabel: "Vega Manifest or GitHub Source",
+    newHeading: "New Source",
+    editHeading: "Update Source",
+    urlLabel: "Manifest URL or GitHub Source",
     urlPlaceholder: "manifest.json URL, GitHub repo URL, or @owner/repo",
     titlePlaceholder: "Friendly name for Movies & Extensions",
-    saveCta: "Save Vega Source",
-    updateCta: "Update Vega Source",
+    saveCta: "Save Source",
+    updateCta: "Update Source",
   },
   VIDEO: {
     newHeading: "New Direct Video Source",
@@ -163,7 +169,7 @@ export function ProvidersView({
             Providers
           </h1>
           <p className="pref-subtitle">
-            Connect IPTV playlists, Vega manifests, GitHub repos, or direct streams. Types detect automatically as you paste.
+            Connect IPTV playlists, extension sources, GitHub repos, or direct streams. Types detect automatically as you paste.
           </p>
         </div>
 
@@ -419,7 +425,7 @@ export function ProvidersView({
                   <div className="prov-row-meta">
                     <div className="prov-row-top">
                       <span className="pref-row-title">{p.title}</span>
-                      <span className="ott-meta-pill amber">{p.type}</span>
+                      <span className="ott-meta-pill amber">{PROVIDER_TYPE_BADGE[p.type]}</span>
                       {p.type === "IPTV" && (
                         <span className="ott-meta-pill dns-tabular">
                           {p.channelCount.toLocaleString()} channels

@@ -22,7 +22,7 @@ interface Props {
 }
 
 function formatRepoBadge(provider?: Provider | null): string {
-  if (!provider) return "Vega";
+  if (!provider) return "Source";
   const title = provider.title.trim();
   const url = provider.url.trim();
   try {
@@ -37,7 +37,7 @@ function formatRepoBadge(provider?: Provider | null): string {
     }
     return title || u.hostname;
   } catch {
-    return title || "Vega";
+    return title || "Source";
   }
 }
 
@@ -230,7 +230,7 @@ export function ExtensionsView({
     e.preventDefault();
     const url = newSourceUrl.trim();
     if (!url) {
-      setError("Enter a Vega manifest URL, GitHub repo, or @handle.");
+      setError("Enter a manifest URL, GitHub repo, or @handle.");
       return;
     }
     setSavingSource(true);
@@ -381,8 +381,8 @@ export function ExtensionsView({
             type="button"
             className="ott-icon-btn"
             style={{ width: 54, height: "auto", borderRadius: 14 }}
-            aria-label="Add Vega provider source"
-            title="Add Vega source"
+            aria-label="Add extension source"
+            title="Add source"
             onClick={() => {
               setSourceMenuOpen(false);
               setShowAddSource((prev) => !prev);
@@ -393,10 +393,10 @@ export function ExtensionsView({
         </div>
 
         {sourceMenuOpen && (
-          <div className="ott-source-menu" role="listbox" aria-label="Vega sources">
+          <div className="ott-source-menu" role="listbox" aria-label="Extension sources">
             {vegaProviders.length === 0 ? (
               <div className="muted" style={{ padding: "10px 12px" }}>
-                No VEGA provider added yet. Click + to add a manifest URL or GitHub repo.
+                No source added yet. Click + to add a manifest URL or GitHub repo.
               </div>
             ) : (
               vegaProviders.map((prov) => {
@@ -437,7 +437,7 @@ export function ExtensionsView({
         {showAddSource && (
           <form className="ott-source-add-sheet" onSubmit={handleAddSource}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <strong style={{ fontSize: 13.5 }}>Add Vega Extension Source</strong>
+              <strong style={{ fontSize: 13.5 }}>Add Extension Source</strong>
               <button
                 type="button"
                 className="btn"
@@ -505,7 +505,7 @@ export function ExtensionsView({
 
       {!loading && extensions.length === 0 && !error && (
         <div className="card muted">
-          No VEGA provider source found. Click <strong>+</strong> above to add a manifest URL or GitHub repo.
+          No extension source found. Click <strong>+</strong> above to add a manifest URL or GitHub repo.
         </div>
       )}
 
