@@ -109,19 +109,24 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
   const tipDelayTimerRef = useRef<number | null>(null);
   const tipCooldownTimerRef = useRef<number | null>(null);
   const tipWarmRef = useRef(false);
+  const liveCheckedUrlRef = useRef("");
+
+  const [liveMirrors, setLiveMirrors] = useState<VegaStream[] | null>(null);
 
   const mirrors: VegaStream[] =
-    request.mirrors && request.mirrors.length > 0
-      ? request.mirrors
-      : [
-          {
-            server: "Primary",
-            link: request.streamUrl,
-            type: request.isLive ? "m3u8" : "auto",
-            quality: "HD",
-            headers: request.headers ?? null,
-          },
-        ];
+    liveMirrors && liveMirrors.length > 0
+      ? liveMirrors
+      : request.mirrors && request.mirrors.length > 0
+        ? request.mirrors
+        : [
+            {
+              server: "Primary",
+              link: request.streamUrl,
+              type: request.isLive ? "m3u8" : "auto",
+              quality: "HD",
+              headers: request.headers ?? null,
+            },
+          ];
 
   const [mirrorIdx, setMirrorIdx] = useState(0);
   const activeStream = mirrors[mirrorIdx] ?? mirrors[0];
@@ -338,6 +343,12 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
   }
 
   useEffect(() => {
+    setMirrorIdx(0);
+    setLiveMirrors(null);
+    liveCheckedUrlRef.current = "";
+  }, [request.link, request.streamUrl]);
+
+  useEffect(() => {
     setFfmpegSeekSec(0);
     setFfmpegAudioIdx(0);
     setSelectedAudio(0);
@@ -375,6 +386,42 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
       setFfmpegStatus(ffStatus);
       if (ffStatus?.installing) {
         setInstallingFfmpeg(true);
+      }
+
+      if (
+        request.isLive &&
+        request.channel &&
+        liveCheckedUrlRef.current !== request.channel.streamUrl
+      ) {
+        liveCheckedUrlRef.current = request.channel.streamUrl;
+        setStatusNotice("Checking live sources...");
+        const liveRes = await api
+          .resolveLiveChannelWithFallback(request.channel)
+          .catch(() => null);
+        if (cancelled) return;
+        if (liveRes) {
+          if (liveRes.error || !liveRes.selectedStream) {
+            setBuffering(false);
+            setStatusNotice("");
+            setErrorMsg(
+              `${liveRes.error || "Channel stream offline or unavailable"}. Try another channel or Open in External Player (VLC/mpv).`
+            );
+            return;
+          }
+          if (liveRes.allStreams.length > 0) {
+            setLiveMirrors(liveRes.allStreams);
+            if (liveRes.message) {
+              setStatusNotice(liveRes.message);
+              window.setTimeout(() => setStatusNotice(""), 3500);
+            } else {
+              setStatusNotice("");
+            }
+            if (liveRes.allStreams[0].link !== activeStream.link) {
+              setMirrorIdx(0);
+              return;
+            }
+          }
+        }
       }
 
       const mergedHeaders = {

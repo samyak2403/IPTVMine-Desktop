@@ -2091,6 +2091,7 @@ version = "0.1.0"
 dependencies = [
  "iptvmine-core",
  "iptvmine-downloader",
+ "iptvmine-fallback",
  "iptvmine-m3u",
  "iptvmine-media",
  "iptvmine-net",
@@ -2122,6 +2123,22 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "iptvmine-fallback"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "iptvmine-core",
+ "iptvmine-vega",
+ "regex",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "url",
 ]
 
 [[package]]

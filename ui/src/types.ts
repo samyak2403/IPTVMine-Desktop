@@ -214,6 +214,15 @@ export interface FallbackResult {
   message?: string | null;
 }
 
+export interface LiveFallbackResult {
+  selectedStream?: VegaStream | null;
+  allStreams: VegaStream[];
+  hiddenDeadCount: number;
+  isFallback: boolean;
+  message?: string | null;
+  error?: string | null;
+}
+
 export interface ProxiedStream {
   proxyUrl: string;
   transcodeBaseUrl: string;
@@ -236,6 +245,7 @@ export interface PlaybackRequest {
   providerUrl?: string;
   scraperValue?: string;
   isLive?: boolean;
+  channel?: Channel;
   mirrors?: VegaStream[];
   episodes?: EpisodeItem[];
   currentEpisodeIndex?: number;

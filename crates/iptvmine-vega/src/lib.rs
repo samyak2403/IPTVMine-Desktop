@@ -1,5 +1,4 @@
 pub mod cheerio;
-pub mod fallback;
 pub mod ssrf;
 
 use crate::cheerio::{HtmlDomStore, SharedDomStore, CHEERIO_JS_SHIM};
@@ -117,33 +116,83 @@ impl VegaRunner {
                     .unwrap_or("");
                 let parts: Vec<&str> = without_scheme.split('/').filter(|s| !s.is_empty()).collect();
                 if parts.len() >= 2 {
-                    let author = if parts[0].eq_ignore_ascii_case("vega") {
-                        "vega-org"
-                    } else {
-                        parts[0]
-                    };
-                    let repo = parts[1];
+                    let owner = parts[0];
+                    let repo = parts[1].trim_end_matches(".git");
                     let branch = if parts.len() >= 4 && parts[2] == "tree" {
                         parts[3]
                     } else {
                         "main"
                     };
-                    return format!("https://raw.githubusercontent.com/{author}/{repo}/refs/heads/{branch}");
+                    return format!("https://raw.githubusercontent.com/{owner}/{repo}/refs/heads/{branch}");
                 }
             }
-            return trimmed.replace(
-                "raw.githubusercontent.com/vega/vega-providers",
-                "raw.githubusercontent.com/vega-org/vega-providers",
-            );
+            return trimmed.to_string();
         }
 
-        let author = trimmed.trim_start_matches('@');
-        let clean_author = if author.eq_ignore_ascii_case("vega") {
-            "vega-org"
+        let handle = trimmed.trim_start_matches('@');
+        if let Some((owner, rest)) = handle.split_once('/') {
+            let (repo, branch) = rest.split_once('@').unwrap_or((rest, "main"));
+            if !owner.is_empty() && !repo.is_empty() {
+                return format!("https://raw.githubusercontent.com/{owner}/{repo}/refs/heads/{branch}");
+            }
+        }
+        if handle.is_empty() {
+            String::new()
         } else {
-            author
+            format!("https://github.com/{handle}")
+        }
+    }
+
+    fn parse_github_coords(url_str: &str) -> Option<(String, String, String)> {
+        let trimmed = url_str.trim().trim_end_matches('/');
+        let lower = trimmed.to_ascii_lowercase();
+        if let Some(rest) = lower
+            .strip_prefix("https://raw.githubusercontent.com/")
+            .and_then(|_| trimmed.strip_prefix("https://raw.githubusercontent.com/"))
+        {
+            let parts: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
+            if parts.len() >= 3 {
+                let owner = parts[0].to_string();
+                let repo = parts[1].to_string();
+                let branch = if parts.len() >= 4 && parts[2] == "refs" && parts.get(3) == Some(&"heads") {
+                    parts.get(4).copied().unwrap_or("main").to_string()
+                } else {
+                    parts[2].to_string()
+                };
+                return Some((owner, repo, branch));
+            }
+        }
+        None
+    }
+
+    async fn discover_owner_repo_roots(&self, owner: &str) -> Vec<String> {
+        let clean = owner.trim().trim_start_matches('@');
+        if clean.is_empty() {
+            return Vec::new();
+        }
+        let api_url = format!(
+            "https://api.github.com/users/{clean}/repos?per_page=10&sort=updated"
+        );
+        let Ok(body) = self.fetch_text(&api_url).await else {
+            return Vec::new();
         };
-        format!("https://raw.githubusercontent.com/{clean_author}/vega-providers/refs/heads/main")
+        let Ok(Value::Array(repos)) = serde_json::from_str::<Value>(&body) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for item in repos {
+            let Some(name) = item.get("name").and_then(|n| n.as_str()) else {
+                continue;
+            };
+            let branch = item
+                .get("default_branch")
+                .and_then(|b| b.as_str())
+                .unwrap_or("main");
+            out.push(format!(
+                "https://raw.githubusercontent.com/{clean}/{name}/refs/heads/{branch}"
+            ));
+        }
+        out
     }
 
     fn build_repo_urls(repo_url: &str) -> Vec<String> {
@@ -201,9 +250,28 @@ impl VegaRunner {
             return;
         }
         let mut sources = Vec::new();
-        for repo in Self::build_repo_urls(resolved_repo) {
-            for name in ["urls.json", "modflix.json", "movies.json"] {
-                sources.push(format!("{repo}/{name}"));
+        for root in Self::build_repo_urls(resolved_repo) {
+            if let Some((owner, repo, branch)) = Self::parse_github_coords(&root) {
+                let contents_url = format!(
+                    "https://api.github.com/repos/{owner}/{repo}/contents?ref={branch}"
+                );
+                if let Ok(body) = self.fetch_text(&contents_url).await {
+                    if let Ok(Value::Array(items)) = serde_json::from_str::<Value>(&body) {
+                        for item in items {
+                            let name = item.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                            let dl_url = item
+                                .get("download_url")
+                                .and_then(|d| d.as_str())
+                                .unwrap_or("");
+                            if name.to_ascii_lowercase().ends_with(".json")
+                                && !name.eq_ignore_ascii_case("manifest.json")
+                                && !dl_url.is_empty()
+                            {
+                                sources.push(dl_url.to_string());
+                            }
+                        }
+                    }
+                }
             }
         }
         if let Ok(providers) = self.storage.list_providers() {
@@ -263,7 +331,20 @@ impl VegaRunner {
             }
         }
 
-        let repos = Self::build_repo_urls(trimmed);
+        let mut repos = Vec::new();
+        let resolved = Self::resolve_repo_url(trimmed);
+        if let Some(owner) = resolved
+            .strip_prefix("https://github.com/")
+            .filter(|s| !s.contains('/') && !s.is_empty())
+        {
+            for root in self.discover_owner_repo_roots(owner).await {
+                repos.push(root.clone());
+                if let Some(m) = to_jsdelivr_mirror(&root) {
+                    repos.push(m);
+                }
+            }
+        }
+        repos.extend(Self::build_repo_urls(trimmed));
         self.fetch_manifest_from_roots(&repos).await
     }
 
@@ -964,11 +1045,7 @@ impl VegaRunner {
             .collect();
         streams.retain(|s| !s.link.trim().is_empty());
 
-        if streams.is_empty()
-            && is_playable_media_url(trimmed)
-            && !lower.contains("pixeldrain")
-            && !lower.contains("pdrain")
-        {
+        if streams.is_empty() && is_playable_media_url(trimmed) {
             streams.push(VegaStream {
                 server: "Direct Source".into(),
                 link: trimmed.to_string(),
@@ -1273,27 +1350,23 @@ impl VegaRunner {
                     )
                     .map_err(|e| VegaError::Js(e.to_string()))?;
 
-                // getBaseUrl host function (with https://{name}.com fallback)
+                // getBaseUrl host function (auto-populated from discovered repository endpoints)
                 let bu = base_urls.clone();
                 globals
                     .set(
                         "__vegaGetBaseUrl",
                         Func::from(move |name: String| -> String {
                             let clean = name.trim();
-                            let found = bu.read().ok().and_then(|m| {
-                                m.get(clean).cloned().or_else(|| {
-                                    m.iter()
-                                        .find(|(k, _)| k.eq_ignore_ascii_case(clean))
-                                        .map(|(_, v)| v.clone())
+                            bu.read()
+                                .ok()
+                                .and_then(|m| {
+                                    m.get(clean).cloned().or_else(|| {
+                                        m.iter()
+                                            .find(|(k, _)| k.eq_ignore_ascii_case(clean))
+                                            .map(|(_, v)| v.clone())
+                                    })
                                 })
-                            });
-                            found.unwrap_or_else(|| {
-                                if clean.is_empty() {
-                                    String::new()
-                                } else {
-                                    format!("https://{clean}.com")
-                                }
-                            })
+                                .unwrap_or_default()
                         }),
                     )
                     .map_err(|e| VegaError::Js(e.to_string()))?;
@@ -2341,8 +2414,8 @@ mod tests {
     #[test]
     fn resolves_github_and_handle_repo_urls() {
         assert_eq!(
-            VegaRunner::resolve_repo_url("@vega-org"),
-            "https://raw.githubusercontent.com/vega-org/vega-providers/refs/heads/main"
+            VegaRunner::resolve_repo_url("@alice/custom-providers"),
+            "https://raw.githubusercontent.com/alice/custom-providers/refs/heads/main"
         );
         assert_eq!(
             VegaRunner::resolve_repo_url("https://github.com/user/my-vega/tree/dev"),

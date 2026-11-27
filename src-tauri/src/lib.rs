@@ -15,7 +15,7 @@ use iptvmine_media::{
 use iptvmine_net::{DnsTestResult, DohState};
 use iptvmine_storage::Storage;
 use iptvmine_updater::{check_latest_release, UpdateCheckResult};
-use iptvmine_vega::fallback::{resolve_with_auto_fallback, FallbackResult};
+use iptvmine_fallback::{FallbackResult, LiveFallbackResult, StreamFallbackEngine};
 use iptvmine_vega::{merge_installed_flags, CatalogResponse, VegaRunner};
 use reqwest::Client;
 use std::collections::{BTreeSet, HashMap};
@@ -30,6 +30,7 @@ pub struct AppState {
     pub http_client: Client,
     pub channel_engine: ChannelEngine,
     pub vega_runner: VegaRunner,
+    pub fallback_engine: StreamFallbackEngine,
     pub stream_proxy: StreamProxy,
     pub download_manager: DownloadManager,
     pub data_dir: PathBuf,
@@ -443,34 +444,69 @@ async fn resolve_vod_stream_with_fallback(
     state: State<'_, AppState>,
 ) -> Result<Option<FallbackResult>, String> {
     let repo_url = resolve_active_vega_url(&state.storage, provider_url.as_deref())?;
-    let installed: Vec<String> = state
-        .storage
-        .get_installed_extensions()
-        .map(|s| s.into_iter().collect())
-        .unwrap_or_default();
+    let installed: Vec<String> = {
+        let active_set = state
+            .storage
+            .get_installed_extensions()
+            .unwrap_or_default();
+        if let Ok(manifest) = state.vega_runner.fetch_manifest(&repo_url).await {
+            let mut ordered: Vec<String> = manifest
+                .into_iter()
+                .filter(|m| !m.disabled && active_set.contains(&m.value))
+                .map(|m| m.value)
+                .collect();
+            for val in active_set {
+                if !ordered.iter().any(|x| x == &val) {
+                    ordered.push(val);
+                }
+            }
+            ordered
+        } else {
+            active_set.into_iter().collect()
+        }
+    };
 
-    let res = resolve_with_auto_fallback(
-        &state.vega_runner,
-        &initial_link,
-        &initial_type,
-        &item_title,
-        &movie_title,
-        current_meta.as_ref(),
-        &repo_url,
-        &scraper_value,
-        &installed,
-        |status| {
-            let _ = app.emit("vega://fallback_status", status);
-        },
-    )
-    .await;
+    let res = state
+        .fallback_engine
+        .resolve_vod(
+            &state.vega_runner,
+            &initial_link,
+            &initial_type,
+            &item_title,
+            &movie_title,
+            current_meta.as_ref(),
+            &repo_url,
+            &scraper_value,
+            &installed,
+            |status| {
+                let _ = app.emit("vega://fallback_status", status);
+            },
+        )
+        .await;
 
     Ok(res)
 }
 
 #[tauri::command]
+async fn resolve_live_channel_with_fallback(
+    channel: Channel,
+    state: State<'_, AppState>,
+) -> Result<LiveFallbackResult, String> {
+    let all_channels = state
+        .cached_channels
+        .read()
+        .map(|g| g.clone())
+        .unwrap_or_default();
+    Ok(state
+        .fallback_engine
+        .resolve_live_channel(&channel, &all_channels)
+        .await)
+}
+
+#[tauri::command]
 fn clear_vod_cache(state: State<'_, AppState>) -> Result<(), String> {
     state.vega_runner.clear_module_cache();
+    state.fallback_engine.clear_health();
     state.storage.clear_vod_cache().map_err(|e| e.to_string())
 }
 
@@ -876,6 +912,7 @@ pub fn run() {
                 http_client.clone(),
                 settings.developer_test_mode,
             );
+            let fallback_engine = StreamFallbackEngine::new(http_client.clone());
             let stream_proxy =
                 tauri::async_runtime::block_on(StreamProxy::start(http_client.clone()));
             let custom_dl_dir = if settings.download_dir.trim().is_empty() {
@@ -899,6 +936,7 @@ pub fn run() {
                 http_client,
                 channel_engine: ChannelEngine::new(),
                 vega_runner,
+                fallback_engine,
                 stream_proxy,
                 download_manager,
                 data_dir,
@@ -942,6 +980,7 @@ pub fn run() {
             get_vod_episodes,
             get_detail_enrichment,
             resolve_vod_stream_with_fallback,
+            resolve_live_channel_with_fallback,
             clear_vod_cache,
             get_app_settings,
             save_app_settings,

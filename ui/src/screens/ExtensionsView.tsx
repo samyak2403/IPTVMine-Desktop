@@ -33,7 +33,7 @@ function formatRepoBadge(provider?: Provider | null): string {
       (u.hostname.includes("github") || u.hostname.includes("jsdelivr")) &&
       parts.length >= 2
     ) {
-      return parts[0].toLowerCase() === "vega-org" ? "Vega-Org" : parts[1];
+      return parts[1];
     }
     return title || u.hostname;
   } catch {
@@ -396,7 +396,7 @@ export function ExtensionsView({
           <div className="ott-source-menu" role="listbox" aria-label="Vega sources">
             {vegaProviders.length === 0 ? (
               <div className="muted" style={{ padding: "10px 12px" }}>
-                No VEGA provider added yet. Click + to add a manifest URL or @vega-org.
+                No VEGA provider added yet. Click + to add a manifest URL or GitHub repo.
               </div>
             ) : (
               vegaProviders.map((prov) => {
@@ -451,7 +451,7 @@ export function ExtensionsView({
               <input
                 className="input"
                 style={{ flex: "1 1 280px" }}
-                placeholder="Manifest URL, GitHub repo, or @vega-org"
+                placeholder="Manifest URL, GitHub repo, or @owner/repo"
                 value={newSourceUrl}
                 onChange={(e) => setNewSourceUrl(e.target.value)}
                 autoFocus
@@ -505,8 +505,7 @@ export function ExtensionsView({
 
       {!loading && extensions.length === 0 && !error && (
         <div className="card muted">
-          No VEGA provider source found. Click <strong>+</strong> above to add a Vega manifest URL or{" "}
-          <code>@vega-org</code>.
+          No VEGA provider source found. Click <strong>+</strong> above to add a manifest URL or GitHub repo.
         </div>
       )}
 

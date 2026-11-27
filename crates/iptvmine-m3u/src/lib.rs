@@ -557,15 +557,42 @@ pub async fn inspect_provider_url(client: &Client, raw_url: &str) -> DetectionRe
 
     let mut candidates = Vec::new();
     if let Some(handle) = trimmed.strip_prefix('@') {
-        let author = if handle.eq_ignore_ascii_case("vega") {
-            "vega-org"
-        } else {
-            handle
-        };
-        let raw_root = format!("https://raw.githubusercontent.com/{author}/vega-providers/refs/heads/main");
-        candidates.push(format!("{raw_root}/manifest.json"));
-        if let Some(mirror) = to_jsdelivr_mirror(&raw_root) {
-            candidates.push(format!("{mirror}/manifest.json"));
+        if let Some((owner, rest)) = handle.split_once('/') {
+            let (repo, branch) = rest.split_once('@').unwrap_or((rest, "main"));
+            if !owner.is_empty() && !repo.is_empty() {
+                let raw_root = format!(
+                    "https://raw.githubusercontent.com/{owner}/{repo}/refs/heads/{branch}"
+                );
+                candidates.push(format!("{raw_root}/manifest.json"));
+                if let Some(mirror) = to_jsdelivr_mirror(&raw_root) {
+                    candidates.push(format!("{mirror}/manifest.json"));
+                }
+            }
+        } else if !handle.is_empty() {
+            let api_url = format!(
+                "https://api.github.com/users/{handle}/repos?per_page=8&sort=updated"
+            );
+            if let Ok(resp) = client
+                .get(&api_url)
+                .header(reqwest::header::USER_AGENT, "IPTVMine-Desktop/0.1")
+                .send()
+                .await
+            {
+                if let Ok(Value::Array(repos)) = resp.json::<Value>().await {
+                    for item in repos {
+                        if let Some(name) = item.get("name").and_then(|n| n.as_str()) {
+                            let branch = item
+                                .get("default_branch")
+                                .and_then(|b| b.as_str())
+                                .unwrap_or("main");
+                            let raw_root = format!(
+                                "https://raw.githubusercontent.com/{handle}/{name}/refs/heads/{branch}"
+                            );
+                            candidates.push(format!("{raw_root}/manifest.json"));
+                        }
+                    }
+                }
+            }
         }
     } else {
         candidates.push(trimmed.to_string());

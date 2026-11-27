@@ -27,6 +27,7 @@ import type {
   DownloadTask,
   FallbackResult,
   FfmpegStatus,
+  LiveFallbackResult,
   MediaProbeResult,
   Provider,
   ProviderType,
@@ -135,6 +136,8 @@ export const api = {
       movieTitle: params.movieTitle,
       currentMeta: params.currentMeta ?? null,
     }),
+  resolveLiveChannelWithFallback: (channel: Channel) =>
+    invoke<LiveFallbackResult>("resolve_live_channel_with_fallback", { channel }),
   clearVodCache: () => invoke<void>("clear_vod_cache"),
   getAppSettings: () => invoke<AppSettings>("get_app_settings"),
   saveAppSettings: (settings: AppSettings) =>

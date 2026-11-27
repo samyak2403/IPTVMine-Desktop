@@ -6,6 +6,7 @@ members = [
     "crates/iptvmine-net",
     "crates/iptvmine-m3u",
     "crates/iptvmine-vega",
+    "crates/iptvmine-fallback",
     "crates/iptvmine-media",
     "crates/iptvmine-downloader",
     "crates/iptvmine-updater",
@@ -35,6 +36,7 @@ iptvmine-storage = { path = "crates/iptvmine-storage" }
 iptvmine-net = { path = "crates/iptvmine-net" }
 iptvmine-m3u = { path = "crates/iptvmine-m3u" }
 iptvmine-vega = { path = "crates/iptvmine-vega" }
+iptvmine-fallback = { path = "crates/iptvmine-fallback" }
 iptvmine-media = { path = "crates/iptvmine-media" }
 iptvmine-downloader = { path = "crates/iptvmine-downloader" }
 iptvmine-updater = { path = "crates/iptvmine-updater" }

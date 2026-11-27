@@ -46,9 +46,8 @@ pub fn detect_provider_quick(input_url: &str, title: &str) -> ProviderType {
     } else if path.ends_with(".m3u") || path.ends_with(".m3u8") {
         ProviderType::Iptv
     } else if trimmed.starts_with('@')
-        || lower.contains("vega")
-        || title.to_ascii_lowercase().contains("vega")
-        || looks_like_vega_repo_or_json(path)
+        || title.to_ascii_lowercase().contains("manifest")
+        || looks_like_manifest_repo_or_json(path)
     {
         ProviderType::Vega
     } else {
@@ -56,18 +55,15 @@ pub fn detect_provider_quick(input_url: &str, title: &str) -> ProviderType {
     }
 }
 
-fn looks_like_vega_repo_or_json(lower_path: &str) -> bool {
-    if lower_path.ends_with("/manifest.json")
-        || lower_path.ends_with("/urls.json")
-        || lower_path.ends_with("/modflix.json")
-    {
+fn looks_like_manifest_repo_or_json(lower_path: &str) -> bool {
+    if lower_path.ends_with("/manifest.json") || lower_path.ends_with(".json") {
         return true;
     }
     (lower_path.starts_with("https://github.com/") || lower_path.starts_with("http://github.com/"))
         && !lower_path.ends_with(".m3u")
 }
 
-/// Derives a readable provider title from a URL or `@handle`.
+/// Derives a readable provider title from a URL or `@owner/repo`.
 pub fn derive_provider_title(raw_url: &str) -> String {
     let trimmed = raw_url.trim().trim_end_matches('/');
     if let Some(handle) = trimmed.strip_prefix('@') {
@@ -83,14 +79,7 @@ pub fn derive_provider_title(raw_url: &str) -> String {
             .path_segments()
             .map(|s| s.filter(|p| !p.is_empty()).collect())
             .unwrap_or_default();
-        let generic = [
-            "index",
-            "playlist",
-            "manifest",
-            "urls",
-            "modflix",
-            "channels",
-        ];
+        let generic = ["index", "playlist", "manifest", "urls", "channels"];
         if segments.len() > 1 {
             if let Some(last) = segments.last() {
                 let base = last.split('.').next().unwrap_or(last);
@@ -152,7 +141,7 @@ mod tests {
             ProviderType::Vega
         );
         assert_eq!(
-            detect_provider_quick("@vega-org", ""),
+            detect_provider_quick("@alice/providers", ""),
             ProviderType::Vega
         );
     }

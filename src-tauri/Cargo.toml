@@ -21,6 +21,7 @@ iptvmine-storage.workspace = true
 iptvmine-net.workspace = true
 iptvmine-m3u.workspace = true
 iptvmine-vega.workspace = true
+iptvmine-fallback.workspace = true
 iptvmine-media.workspace = true
 iptvmine-downloader.workspace = true
 iptvmine-updater.workspace = true

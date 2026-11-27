@@ -283,6 +283,7 @@ export function App() {
             headers: ch.headers,
             imageUrl: ch.logoUrl,
             isLive: true,
+            channel: ch,
           }),
         onSecondary: () => setRoute("television"),
       }));
@@ -355,6 +356,7 @@ export function App() {
             headers: ch.headers,
             imageUrl: ch.logoUrl,
             isLive: true,
+            channel: ch,
           }),
       })),
     [channels]
@@ -959,6 +961,7 @@ export function App() {
                             headers: ch.headers,
                             imageUrl: ch.logoUrl,
                             isLive: true,
+                            channel: ch,
                           })
                         }
                       >
@@ -1076,7 +1079,7 @@ export function App() {
                   />
                   <input
                     className="input"
-                    placeholder="Playlist / Vega Manifest / @vega-org / Video URL"
+                    placeholder="Playlist / Manifest / @owner/repo / Video URL"
                     value={newUrl}
                     onChange={(e) => void handleUrlChange(e.target.value)}
                   />

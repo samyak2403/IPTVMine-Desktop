@@ -387,8 +387,8 @@ pub fn clean_title(raw: &str) -> String {
     filtered.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Prioritizes fast direct mirrors (CF Worker, FastCloud, Google CDN, HubCloud, CF Storage, Gofile, Pixeldrain)
-/// and deduplicates by link, sorting ties by descending quality.
+/// Algorithmically prioritizes valid media streams by streaming capability, transport security,
+/// direct media playability, and descending quality resolution (zero hardcoded mirror brands).
 pub fn prioritize_streams(streams: Vec<VegaStream>) -> Vec<VegaStream> {
     if streams.is_empty() {
         return streams;
@@ -397,32 +397,37 @@ pub fn prioritize_streams(streams: Vec<VegaStream>) -> Vec<VegaStream> {
     let mut seen = std::collections::HashSet::new();
     let mut unique: Vec<VegaStream> = streams
         .into_iter()
-        .filter(|s| seen.insert(s.link.clone()))
+        .filter(|s| !s.link.trim().is_empty() && seen.insert(s.link.clone()))
         .collect();
 
     unique.sort_by(|a, b| {
         let rank = |s: &VegaStream| -> u8 {
-            let server = s.server.to_ascii_lowercase();
-            let link = s.link.to_ascii_lowercase();
-            if server.contains("cf worker") || server.contains("worker") {
+            let link = s.link.trim().to_ascii_lowercase();
+            let clean = link
+                .split('?')
+                .next()
+                .unwrap_or(&link)
+                .split('#')
+                .next()
+                .unwrap_or(&link);
+            let is_https = link.starts_with("https://");
+            let is_adaptive = clean.ends_with(".m3u8")
+                || clean.ends_with(".mpd")
+                || link.contains("/hls/")
+                || link.contains("/dash/")
+                || matches!(s.r#type.trim().to_ascii_lowercase().as_str(), "m3u8" | "hls" | "mpd" | "dash");
+            let is_direct = crate::is_direct_video_url(clean);
+
+            if is_adaptive && is_https {
                 0
-            } else if server.contains("fastcloud") || server.contains("fast cloud") {
+            } else if is_direct && is_https {
                 1
-            } else if server.contains("instant") || server.contains("google cdn") {
+            } else if is_https {
                 2
-            } else if server.contains("hubcloud") {
+            } else if is_adaptive || is_direct || link.starts_with("http://") {
                 3
-            } else if server.contains("cf storage") || server.contains("cloudflare") {
-                4
-            } else if server.contains("gofile") {
-                5
-            } else if server.contains("pixeldrain")
-                || link.contains("pixeldrain")
-                || link.contains("pdrain")
-            {
-                6
             } else {
-                7
+                4
             }
         };
 
@@ -440,7 +445,7 @@ fn parse_quality(q: &str) -> u32 {
     digits.parse::<u32>().unwrap_or(0)
 }
 
-/// Checks whether a URL is a genuine direct media stream URL rather than a landing page.
+/// Checks structurally whether a URL is a direct media stream or playlist without hardcoded hostnames.
 pub fn is_playable_media_url(url_str: &str) -> bool {
     let trimmed = url_str.trim();
     if trimmed.is_empty() {
@@ -468,14 +473,11 @@ pub fn is_playable_media_url(url_str: &str) -> bool {
         || clean.contains(".mpd")
         || lower.contains("/dash/")
         || lower.contains(".mpd")
-        || (lower.contains("pixeldrain") && lower.contains("api/file"))
-        || lower.contains("googleusercontent.com")
-        || lower.contains(".r2.dev")
-        || lower.contains(".workers.dev")
-        || lower.contains("fastdl.")
-        || lower.contains("hubcdn.")
         || lower.starts_with("rtmp://")
         || lower.starts_with("rtmps://")
+        || lower.starts_with("rtsp://")
+        || lower.starts_with("udp://")
+        || lower.starts_with("rtp://")
 }
 
 #[cfg(test)]
@@ -492,23 +494,23 @@ mod tests {
     fn prioritize_streams_orders_mirrors_and_quality() {
         let streams = vec![
             VegaStream {
-                server: "Gofile".into(),
-                link: "https://gofile.io/1".into(),
+                server: "Legacy HTTP".into(),
+                link: "http://cdn.example.com/1080.mp4".into(),
                 r#type: "mp4".into(),
                 quality: "1080".into(),
                 ..Default::default()
             },
             VegaStream {
-                server: "CF Worker".into(),
-                link: "https://w.example.workers.dev/720.mp4".into(),
+                server: "Direct 720".into(),
+                link: "https://cdn.example.com/720.mp4".into(),
                 r#type: "mp4".into(),
                 quality: "720".into(),
                 ..Default::default()
             },
             VegaStream {
-                server: "CF Worker".into(),
-                link: "https://w.example.workers.dev/1080.mp4".into(),
-                r#type: "mp4".into(),
+                server: "Adaptive 1080".into(),
+                link: "https://cdn.example.com/master.m3u8".into(),
+                r#type: "m3u8".into(),
                 quality: "1080".into(),
                 ..Default::default()
             },
@@ -516,16 +518,15 @@ mod tests {
 
         let sorted = prioritize_streams(streams);
         assert_eq!(sorted.len(), 3);
-        assert_eq!(sorted[0].quality, "1080");
-        assert_eq!(sorted[0].server, "CF Worker");
-        assert_eq!(sorted[1].quality, "720");
-        assert_eq!(sorted[2].server, "Gofile");
+        assert_eq!(sorted[0].server, "Adaptive 1080");
+        assert_eq!(sorted[1].server, "Direct 720");
+        assert_eq!(sorted[2].server, "Legacy HTTP");
     }
 
     #[test]
     fn playable_media_url_detects_streams_and_rejects_html() {
         assert!(is_playable_media_url("https://cdn.example.com/master.m3u8?token=abc"));
-        assert!(is_playable_media_url("https://my-worker.workers.dev/file"));
+        assert!(is_playable_media_url("https://cdn.example.com/video.mp4"));
         assert!(is_playable_media_url("rtmp://live.example.com/app/stream"));
         assert!(!is_playable_media_url("https://example.com/watch/movie-123"));
         assert!(!is_playable_media_url("   "));
