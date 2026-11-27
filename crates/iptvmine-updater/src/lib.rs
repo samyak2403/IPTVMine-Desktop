@@ -105,12 +105,45 @@ pub fn evaluate_release(
 }
 
 pub fn select_platform_asset(assets: &[GithubAsset]) -> Option<&GithubAsset> {
-    let preferred_exts: &[&str] = if cfg!(target_os = "windows") {
-        &[".msi", ".exe"]
-    } else if cfg!(target_os = "macos") {
-        &[".dmg", ".app.tar.gz"]
-    } else {
-        &[".appimage", ".deb"]
+    select_platform_asset_for(assets, std::env::consts::OS, std::env::consts::ARCH)
+}
+
+pub fn select_platform_asset_for<'a>(
+    assets: &'a [GithubAsset],
+    os: &str,
+    arch: &str,
+) -> Option<&'a GithubAsset> {
+    if os == "windows" {
+        let is_arm64 = arch == "aarch64";
+        let preferred_exts: &[&str] = if is_arm64 {
+            &[".exe", ".msi"]
+        } else {
+            &[".msi", ".exe"]
+        };
+
+        // 1. Prefer exact architecture match first (e.g. *_arm64-setup.exe on ARM64, *_x64* on x86_64)
+        for ext in preferred_exts {
+            if let Some(found) = assets.iter().find(|a| {
+                let lower = a.name.to_ascii_lowercase();
+                if !lower.ends_with(ext) {
+                    return false;
+                }
+                let has_arm = lower.contains("arm64") || lower.contains("aarch64");
+                if is_arm64 {
+                    has_arm
+                } else {
+                    !has_arm
+                }
+            }) {
+                return Some(found);
+            }
+        }
+    }
+
+    let preferred_exts: &[&str] = match os {
+        "windows" => &[".msi", ".exe"],
+        "macos" => &[".dmg", ".app.tar.gz"],
+        _ => &[".appimage", ".deb"],
     };
 
     for ext in preferred_exts {
@@ -161,5 +194,40 @@ mod tests {
         let res = evaluate_release(&release, "0.1.0").unwrap();
         assert!(res.update_available);
         assert!(res.download_url.is_some());
+    }
+
+    #[test]
+    fn selects_arm64_and_x64_windows_assets_accurately() {
+        let assets = vec![
+            GithubAsset {
+                name: "IPTVMine Desktop_0.2.0_x64_en-US.msi".into(),
+                browser_download_url: "https://example.com/x64.msi".into(),
+                size: 100,
+                content_type: None,
+            },
+            GithubAsset {
+                name: "IPTVMine Desktop_0.2.0_x64-setup.exe".into(),
+                browser_download_url: "https://example.com/x64-setup.exe".into(),
+                size: 100,
+                content_type: None,
+            },
+            GithubAsset {
+                name: "IPTVMine Desktop_0.2.0_arm64-setup.exe".into(),
+                browser_download_url: "https://example.com/arm64-setup.exe".into(),
+                size: 100,
+                content_type: None,
+            },
+        ];
+
+        assert_eq!(
+            select_platform_asset_for(&assets, "windows", "aarch64")
+                .map(|a| a.name.as_str()),
+            Some("IPTVMine Desktop_0.2.0_arm64-setup.exe")
+        );
+        assert_eq!(
+            select_platform_asset_for(&assets, "windows", "x86_64")
+                .map(|a| a.name.as_str()),
+            Some("IPTVMine Desktop_0.2.0_x64_en-US.msi")
+        );
     }
 }

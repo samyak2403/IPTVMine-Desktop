@@ -1,0 +1,9 @@
+[alias]
+check-arm64 = "check --workspace --target aarch64-pc-windows-msvc"
+build-arm64 = "build --workspace --release --target aarch64-pc-windows-msvc"
+
+[target.aarch64-pc-windows-msvc]
+# Cross-compilation from x64 Windows uses Visual Studio's HostX64->ARM64 MSVC toolset
+# (`vcvarsall.bat amd64_arm64` or CI `ilammy/msvc-dev-cmd@v1` with `arch: amd64_arm64`)
+# together with `Microsoft.VisualStudio.Component.VC.Tools.ARM64` and `rustup target add aarch64-pc-windows-msvc`.
+# Use `tauri build --target aarch64-pc-windows-msvc --bundles nsis` (WiX MSI is x86/x64 only).
