@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import Hls from "hls.js";
 import {
@@ -189,8 +189,45 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
   const [ffmpegForceTranscode, setFfmpegForceTranscode] = useState(false);
 
   const [errorMsg, setErrorMsg] = useState("");
-  const [statusNotice, setStatusNotice] = useState("");
+  const [statusNotice, setStatusNoticeState] = useState("");
+  const statusNoticeRef = useRef("");
+  const noticeTimedRef = useRef(false);
+  const noticeTimerRef = useRef<number | null>(null);
   const [resolvingNext, setResolvingNext] = useState(false);
+
+  const setStatusNotice = useCallback((msg: string) => {
+    if (noticeTimerRef.current !== null) {
+      window.clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = null;
+    }
+    noticeTimedRef.current = false;
+    statusNoticeRef.current = msg;
+    setStatusNoticeState(msg);
+  }, []);
+
+  const flashStatusNotice = useCallback((msg: string, ms = 3500) => {
+    if (noticeTimerRef.current !== null) {
+      window.clearTimeout(noticeTimerRef.current);
+    }
+    noticeTimedRef.current = true;
+    statusNoticeRef.current = msg;
+    setStatusNoticeState(msg);
+    noticeTimerRef.current = window.setTimeout(() => {
+      noticeTimerRef.current = null;
+      noticeTimedRef.current = false;
+      statusNoticeRef.current = "";
+      setStatusNoticeState("");
+    }, ms);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (noticeTimerRef.current !== null) {
+        window.clearTimeout(noticeTimerRef.current);
+      }
+    },
+    []
+  );
 
   const hasNextEpisode =
     !!request.episodes &&
@@ -419,8 +456,7 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
           if (liveRes.allStreams.length > 0) {
             setLiveMirrors(liveRes.allStreams);
             if (liveRes.message) {
-              setStatusNotice(liveRes.message);
-              window.setTimeout(() => setStatusNotice(""), 3500);
+              flashStatusNotice(liveRes.message, 3500);
             } else {
               setStatusNotice("");
             }
@@ -854,8 +890,7 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
         request.title,
         merged
       );
-      setStatusNotice(`Opened in ${exe}`);
-      window.setTimeout(() => setStatusNotice(""), 3000);
+      flashStatusNotice(`Opened in ${exe}`, 3000);
     } catch (err) {
       setErrorMsg(String(err));
     }
@@ -1045,9 +1080,19 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
             setBuffering(false);
             bumpHud("pointer");
           }}
-          onPlaying={() => setBuffering(false)}
+          onPlaying={() => {
+            setBuffering(false);
+            if (!noticeTimedRef.current && statusNoticeRef.current) {
+              setStatusNotice("");
+            }
+          }}
           onWaiting={() => setBuffering(true)}
-          onCanPlay={() => setBuffering(false)}
+          onCanPlay={() => {
+            setBuffering(false);
+            if (!noticeTimedRef.current && statusNoticeRef.current) {
+              setStatusNotice("");
+            }
+          }}
           onPause={() => {
             setPlaying(false);
             setHudVisible(true);
@@ -1066,7 +1111,17 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
             setBufferedEnd(vid.buffered.end(vid.buffered.length - 1));
           }}
           onTimeUpdate={() => {
-            if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
+            const vid = videoRef.current;
+            if (!vid) return;
+            setCurrentTime(vid.currentTime);
+            if (
+              !vid.paused &&
+              vid.currentTime > 0 &&
+              !noticeTimedRef.current &&
+              statusNoticeRef.current
+            ) {
+              setStatusNotice("");
+            }
           }}
           onDurationChange={() => {
             if (videoRef.current) setDuration(videoRef.current.duration || 0);
