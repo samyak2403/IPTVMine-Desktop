@@ -5,11 +5,12 @@ import { formatOttTitle } from "../components/OttUi";
 import type { VegaCatalog, VegaPost, VegaProvider } from "../types";
 
 interface Props {
+  initialFilter?: string;
   onSelectPost: (post: VegaPost, scraperValue: string) => void;
   onOpenExtensions: () => void;
 }
 
-export function MoviesView({ onSelectPost, onOpenExtensions }: Props) {
+export function MoviesView({ initialFilter, onSelectPost, onOpenExtensions }: Props) {
   const [extensions, setExtensions] = useState<VegaProvider[]>([]);
   const [selectedScraper, setSelectedScraper] = useState<string>("");
   const [catalog, setCatalog] = useState<VegaCatalog[]>([]);
@@ -54,7 +55,12 @@ export function MoviesView({ onSelectPost, onOpenExtensions }: Props) {
         const res = await api.getVodCatalog(selectedScraper);
         setCatalog(res.catalog);
         setGenres(res.genres ?? []);
-        const firstFilter = res.catalog[0]?.filter ?? "";
+        const validInitial =
+          initialFilter !== undefined &&
+          [...res.catalog, ...(res.genres ?? [])].some((c) => c.filter === initialFilter)
+            ? initialFilter
+            : undefined;
+        const firstFilter = validInitial ?? res.catalog[0]?.filter ?? "";
         setSelectedFilter(firstFilter);
         setPage(1);
         const initialPosts = await api.getVodPosts(selectedScraper, firstFilter, 1);

@@ -49,10 +49,17 @@ type Route =
   | "bug-report"
   | "legal";
 
+interface HomeVodSection {
+  title: string;
+  filter: string;
+  posts: VegaPost[];
+}
+
 interface HomeVodFeed {
   scraperValue: string;
   scraperName: string;
   posts: VegaPost[];
+  sections: HomeVodSection[];
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -110,6 +117,7 @@ export function App() {
     post: VegaPost;
     scraperValue: string;
   } | null>(null);
+  const [moviesInitialFilter, setMoviesInitialFilter] = useState<string | undefined>(undefined);
 
   // Active full-screen playback overlay
   const [activePlayback, setActivePlayback] = useState<PlaybackRequest | null>(null);
@@ -159,14 +167,75 @@ export function App() {
         return;
       }
       const cat = await api.getVodCatalog(target.value);
-      const firstFilter = cat.catalog[0]?.filter ?? "";
-      const posts = await api.getVodPosts(target.value, firstFilter, 1);
+      const scraperName = target.display_name || target.value;
+      const seenFilters = new Set<string>();
+      const rawCandidates = [
+        ...cat.catalog,
+        ...(cat.catalog.length <= 4 ? (cat.genres ?? []) : []),
+      ];
+      const candidates = rawCandidates
+        .filter((item) => {
+          const title = item.title.trim();
+          const filterKey = item.filter.trim();
+          if (!title || seenFilters.has(filterKey)) return false;
+          seenFilters.add(filterKey);
+          return true;
+        })
+        .slice(0, 10);
+
+      if (candidates.length === 0) {
+        const posts = await api.getVodPosts(target.value, "", 1);
+        setHomeFeed({
+          scraperValue: target.value,
+          scraperName,
+          posts,
+          sections:
+            posts.length > 0
+              ? [{ title: `${scraperName} Catalogue`, filter: "", posts }]
+              : [],
+        });
+        setHeroIdx(0);
+        return;
+      }
+
+      const first = candidates[0];
+      const firstPosts = await api.getVodPosts(target.value, first.filter, 1).catch(() => [] as VegaPost[]);
+      const initialSection: HomeVodSection | null =
+        firstPosts.length > 0
+          ? { title: first.title.trim(), filter: first.filter, posts: firstPosts }
+          : null;
+
       setHomeFeed({
         scraperValue: target.value,
-        scraperName: target.display_name || target.value,
-        posts,
+        scraperName,
+        posts: firstPosts,
+        sections: initialSection ? [initialSection] : [],
       });
       setHeroIdx(0);
+
+      if (candidates.length > 1) {
+        const restResults = await Promise.allSettled(
+          candidates.slice(1).map(async (item) => {
+            const posts = await api.getVodPosts(target.value, item.filter, 1);
+            return { title: item.title.trim(), filter: item.filter, posts } as HomeVodSection;
+          })
+        );
+        const extraSections = restResults
+          .filter((r): r is PromiseFulfilledResult<HomeVodSection> => r.status === "fulfilled" && r.value.posts.length > 0)
+          .map((r) => r.value);
+
+        if (extraSections.length > 0) {
+          setHomeFeed((prev) => {
+            if (!prev || prev.scraperValue !== target.value) return prev;
+            const merged = initialSection ? [initialSection, ...extraSections] : extraSections;
+            return {
+              ...prev,
+              posts: prev.posts.length > 0 ? prev.posts : (merged[0]?.posts ?? []),
+              sections: merged,
+            };
+          });
+        }
+      }
     } catch {
       // Keep Home responsive even if upstream scraper is temporarily unreachable
     }
@@ -246,7 +315,10 @@ export function App() {
           setSelectedVod({ post, scraperValue: homeFeed.scraperValue });
           setRoute("movie-detail");
         },
-        onSecondary: () => setRoute("movies"),
+        onSecondary: () => {
+          setMoviesInitialFilter(undefined);
+          setRoute("movies");
+        },
       }));
     }
     if (history.length > 0) {
@@ -362,18 +434,40 @@ export function App() {
     [channels]
   );
 
-  const vodTallCards: OttCardItem[] = useMemo(() => {
+  const vodCategorySections = useMemo(() => {
     if (!homeFeed) return [];
-    return homeFeed.posts.slice(0, 18).map((post) => ({
-      id: `${post.link}-${post.title}`,
-      title: formatOttTitle(post.title),
-      image: post.image,
-      onClick: () => {
-        setSelectedVod({ post, scraperValue: homeFeed.scraperValue });
-        setRoute("movie-detail");
-      },
+    const sourceSections =
+      homeFeed.sections.length > 0
+        ? homeFeed.sections
+        : homeFeed.posts.length > 0
+          ? [{ title: `${homeFeed.scraperName} Catalogue`, filter: "", posts: homeFeed.posts }]
+          : [];
+    return sourceSections.map((sec) => ({
+      title: sec.title,
+      filter: sec.filter,
+      items: sec.posts.slice(0, 18).map((post) => ({
+        id: `${sec.filter}-${post.link}-${post.title}`,
+        title: formatOttTitle(post.title),
+        image: post.image,
+        onClick: () => {
+          setSelectedVod({ post, scraperValue: homeFeed.scraperValue });
+          setRoute("movie-detail");
+        },
+      })),
     }));
   }, [homeFeed]);
+
+  const liveCategorySummaries = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const ch of channels) {
+      const cat = ch.category?.trim();
+      if (!cat || cat === "All") continue;
+      counts.set(cat, (counts.get(cat) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }, [channels]);
 
   const vodLandscapeCards: OttCardItem[] = useMemo(() => {
     if (!homeFeed) return [];
@@ -600,7 +694,10 @@ export function App() {
           type="button"
           className={`ott-nav-item ${isBrowseActive ? "active" : ""}`}
           aria-label="Movies & Browse"
-          onClick={() => setRoute("movies")}
+          onClick={() => {
+            setMoviesInitialFilter(undefined);
+            setRoute("movies");
+          }}
         >
           <img className="ott-nav-icon" src={gridSquareSvg} alt="" width={56} height={56} />
           <span className="ott-nav-tooltip">Movies & Browse</span>
@@ -761,6 +858,37 @@ export function App() {
               />
             )}
 
+            {liveCategorySummaries.length > 0 && (
+              <section className="ott-section" aria-label="Live TV Categories">
+                <div className="ott-section-head">
+                  <h2 className="ott-section-title">Live TV Categories</h2>
+                  <button
+                    type="button"
+                    className="ott-glass-pill"
+                    onClick={() => setRoute("category")}
+                  >
+                    All Categories
+                  </button>
+                </div>
+                <div className="ott-cat-strip">
+                  {liveCategorySummaries.slice(0, 24).map((cat) => (
+                    <button
+                      type="button"
+                      key={cat.name}
+                      className="ott-cat-chip"
+                      onClick={() => {
+                        setSelectedCategory(cat.name);
+                        setRoute("television");
+                      }}
+                    >
+                      <span>{cat.name}</span>
+                      <span className="ott-cat-count">{cat.count}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {midBannerPost && homeFeed && (
               <MidBanner
                 title={formatOttTitle(midBannerPost.title)}
@@ -774,22 +902,26 @@ export function App() {
               />
             )}
 
-            {vodTallCards.length > 0 && (
+            {vodCategorySections.map((sec) => (
               <OttCarousel
-                title={homeFeed ? `${homeFeed.scraperName} Catalogue` : "Trending Movies & Series"}
+                key={sec.filter || sec.title}
+                title={sec.title}
                 variant="tall"
-                items={vodTallCards}
+                items={sec.items}
                 headerAction={
                   <button
                     type="button"
                     className="ott-glass-pill"
-                    onClick={() => setRoute("movies")}
+                    onClick={() => {
+                      setMoviesInitialFilter(sec.filter);
+                      setRoute("movies");
+                    }}
                   >
-                    Browse All
+                    Browse
                   </button>
                 }
               />
-            )}
+            ))}
           </div>
         )}
 
@@ -985,6 +1117,7 @@ export function App() {
 
             {route === "movies" && (
               <MoviesView
+                initialFilter={moviesInitialFilter}
                 onSelectPost={(post, scraperValue) => {
                   setSelectedVod({ post, scraperValue });
                   setRoute("movie-detail");

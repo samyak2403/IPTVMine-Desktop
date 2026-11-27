@@ -534,6 +534,54 @@ textarea {
   display: none;
 }
 
+.ott-cat-strip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 2px 36px 8px 2px;
+  scrollbar-width: none;
+}
+
+.ott-cat-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.ott-cat-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-glass);
+  backdrop-filter: blur(18px) saturate(180%);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    transform 110ms var(--ease-spring);
+}
+
+.ott-cat-chip:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: var(--border-bright);
+}
+
+.ott-cat-chip:active {
+  transform: scale(0.96);
+}
+
+.ott-cat-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.62);
+}
+
 .ott-landscape-card {
   position: relative;
   flex: 0 0 clamp(270px, 26vw, 390px);
