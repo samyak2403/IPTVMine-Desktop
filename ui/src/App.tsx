@@ -1370,6 +1370,10 @@ export function App() {
               <DownloadsView
                 onPlayLocal={(req) => setActivePlayback(req)}
                 onTasksChange={setDownloads}
+                onBrowseMovies={() => {
+                  setMoviesInitialFilter(undefined);
+                  setRoute("movies");
+                }}
               />
             )}
 
