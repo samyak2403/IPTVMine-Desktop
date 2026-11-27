@@ -85,10 +85,17 @@ function rubberband(overshoot: number, dimension = 24, constant = 0.35): number 
 }
 
 function needsContainerRemux(url: string): boolean {
-  const lower = url.toLowerCase();
+  let decoded = url;
+  try {
+    decoded = decodeURIComponent(url);
+  } catch {
+    decoded = url;
+  }
+  const lower = decoded.toLowerCase();
   return (
     /^(rtmp|rtmps|rtsp|udp|rtp):\/\//.test(lower) ||
-    /\.(mkv|avi|flv|wmv|ts)(\?|#|$)/.test(lower)
+    /\.(mkv|avi|flv|wmv|ts)(\?|#|$)/.test(lower) ||
+    /\.(mkv|avi|flv|wmv)(\b|["'&]|$)/.test(lower)
   );
 }
 
@@ -110,6 +117,7 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
   const tipCooldownTimerRef = useRef<number | null>(null);
   const tipWarmRef = useRef(false);
   const liveCheckedUrlRef = useRef("");
+  const vodReResolvedRef = useRef("");
 
   const [liveMirrors, setLiveMirrors] = useState<VegaStream[] | null>(null);
 
@@ -555,7 +563,19 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
         void video.play().catch(() => {});
       };
 
-      if (Hls.isSupported() && (looksHls || !lower.match(/\.(mp4|mkv|webm|mov)(\?|$)/))) {
+      const probeFmt = (probe?.formatName || "").toLowerCase();
+      const confirmedHls =
+        looksHls || probeFmt.includes("hls") || probeFmt.includes("applehttp");
+      const confirmedDirectContainer =
+        /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(lower) ||
+        probeFmt.includes("mp4") ||
+        probeFmt.includes("mov") ||
+        (probeFmt.includes("webm") && !probeFmt.includes("matroska"));
+
+      if (
+        Hls.isSupported() &&
+        (confirmedHls || (!confirmedDirectContainer && Boolean(request.isLive)))
+      ) {
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: Boolean(request.isLive),
@@ -763,6 +783,47 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
     void saveCurrentProgress();
     void api.setAlwaysOnTop(false).catch(() => {});
     onClose();
+  }
+
+  async function tryRefreshExpiredVod(): Promise<boolean> {
+    if (
+      request.isLive ||
+      !request.scraperValue ||
+      !request.link ||
+      !onEpisodeResolved ||
+      vodReResolvedRef.current === request.link
+    ) {
+      return false;
+    }
+    vodReResolvedRef.current = request.link;
+    const parts = request.title.split(" - ");
+    const movieTitle = parts[0]?.trim() || request.title;
+    const itemTitle = parts.slice(1).join(" - ").trim() || request.title;
+    setStatusNotice("Refreshing expired stream link...");
+    try {
+      const res = await api.resolveVodStreamWithFallback({
+        providerUrl: request.providerUrl,
+        scraperValue: request.scraperValue,
+        initialLink: request.link,
+        initialType: "movie",
+        itemTitle,
+        movieTitle,
+      });
+      if (res && res.selectedStream.link !== activeStream.link) {
+        onEpisodeResolved({
+          ...request,
+          streamUrl: res.selectedStream.link,
+          headers: res.selectedStream.headers ?? undefined,
+          mirrors: res.allStreams,
+          scraperValue: res.providerValue,
+        });
+        return true;
+      }
+    } catch {
+      // Fall through cleanly to normal error display
+    }
+    setStatusNotice("");
+    return false;
   }
 
   async function toggleFullscreen() {
@@ -1013,7 +1074,7 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
           onError={() => {
             void (async () => {
               setBuffering(false);
-              if (!useFfmpeg && ffmpegStatus?.installed) {
+              if (!useFfmpeg && ffmpegStatus?.installed && (!probeResult || probeResult.needsTranscode)) {
                 if (hlsRef.current) {
                   hlsRef.current.destroy();
                   hlsRef.current = null;
@@ -1028,6 +1089,12 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
                     .then((r) => (r.ok ? r.text() : ""))
                     .catch(() => "");
                   if (reason.trim()) {
+                    if (mirrorIdx + 1 < mirrors.length) {
+                      setStatusNotice("Switching to next mirror...");
+                      setMirrorIdx((i) => i + 1);
+                      return;
+                    }
+                    if (await tryRefreshExpiredVod()) return;
                     setStatusNotice("");
                     setErrorMsg(
                       `${reason.trim()}. Try another mirror or Open in External Player (VLC/mpv).`
@@ -1040,6 +1107,12 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
                     return;
                   }
                 }
+                if (mirrorIdx + 1 < mirrors.length) {
+                  setStatusNotice("Switching to next mirror...");
+                  setMirrorIdx((i) => i + 1);
+                  return;
+                }
+                if (await tryRefreshExpiredVod()) return;
                 setStatusNotice("");
                 setErrorMsg(
                   ffmpegStatus?.installed

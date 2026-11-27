@@ -836,15 +836,16 @@ pub fn build_transcode_args(
         "error".into(),
         "-fflags".into(),
         "+genpts+discardcorrupt".into(),
+        "-probesize".into(),
+        "1048576".into(),
+        "-analyzeduration".into(),
+        "1500000".into(),
     ];
-
-    if start_sec > 0.5 && !trimmed.starts_with("rtmp") && !trimmed.starts_with("udp") {
-        args.push("-ss".into());
-        args.push(format!("{start_sec:.2}"));
-    }
 
     if is_http {
         args.extend([
+            "-rw_timeout".into(),
+            "15000000".into(),
             "-reconnect".into(),
             "1".into(),
             "-reconnect_streamed".into(),
@@ -859,6 +860,11 @@ pub fn build_transcode_args(
         if let Some(h) = hdrs {
             args.extend(["-headers".into(), h]);
         }
+    }
+
+    if start_sec > 0.5 && !trimmed.starts_with("rtmp") && !trimmed.starts_with("udp") {
+        args.push("-ss".into());
+        args.push(format!("{start_sec:.2}"));
     }
 
     args.extend([
@@ -878,11 +884,19 @@ pub fn build_transcode_args(
             "-c:v".into(),
             "libx264".into(),
             "-preset".into(),
-            "veryfast".into(),
+            "ultrafast".into(),
+            "-tune".into(),
+            "zerolatency".into(),
             "-crf".into(),
-            "22".into(),
+            "23".into(),
             "-pix_fmt".into(),
             "yuv420p".into(),
+            "-g".into(),
+            "48".into(),
+            "-keyint_min".into(),
+            "48".into(),
+            "-sc_threshold".into(),
+            "0".into(),
         ]);
     }
 

@@ -348,8 +348,24 @@ impl StreamFallbackEngine {
             });
         }
 
-        // 2. Sibling directLinks on the same server
-        let all_servers = current_meta.map(|m| m.link_list.as_slice()).unwrap_or(&[]);
+        // 2. Sibling directLinks on the same server (auto-fetching meta when only a post link is given)
+        let fetched_meta = if current_meta.is_none()
+            && !current_scraper.trim().is_empty()
+            && !is_playable_media_url(initial_link)
+        {
+            on_status(&format!("Refreshing links from {current_scraper}..."));
+            timeout(
+                Duration::from_secs(15),
+                runner.get_meta(repo_url, current_scraper, initial_link),
+            )
+            .await
+            .ok()
+            .and_then(Result::ok)
+        } else {
+            None
+        };
+        let effective_meta = current_meta.or(fetched_meta.as_ref());
+        let all_servers = effective_meta.map(|m| m.link_list.as_slice()).unwrap_or(&[]);
         let current_server = all_servers.iter().find(|s| {
             s.direct_links
                 .as_ref()
@@ -390,14 +406,20 @@ impl StreamFallbackEngine {
             }
         }
 
-        // 3. Other servers under the same metadata item
-        for server in all_servers {
-            if current_server
-                .map(|cs| cs.title == server.title)
-                .unwrap_or(false)
-            {
-                continue;
-            }
+        // 3. Other servers under the same metadata item (preferring best title/quality match first)
+        let mut ordered_servers: Vec<(usize, f64, &iptvmine_core::VegaLink)> = all_servers
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| !current_server.map(|cs| cs.title == s.title).unwrap_or(false))
+            .map(|(idx, s)| (idx, title_similarity(item_title, &s.title), s))
+            .collect();
+        ordered_servers.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+        });
+
+        for (_, _, server) in ordered_servers {
             for dl in server.direct_links.as_deref().unwrap_or(&[]) {
                 if dl.link.trim().is_empty() {
                     continue;

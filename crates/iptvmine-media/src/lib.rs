@@ -627,9 +627,20 @@ async fn handle_transcode_error(
 }
 
 async fn handle_transcode(
+    method: axum::http::Method,
     State(state): State<ProxyAppState>,
     Query(query): Query<TranscodeQuery>,
 ) -> Response {
+    if method == axum::http::Method::HEAD {
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .header(header::CONTENT_TYPE, "video/mp4")
+            .header(header::CACHE_CONTROL, "no-store")
+            .body(Body::empty())
+            .unwrap();
+    }
+
     let session = {
         let Ok(map) = state.sessions.read() else {
             return error_response(StatusCode::INTERNAL_SERVER_ERROR, "session lock failed");
@@ -682,7 +693,7 @@ async fn handle_transcode(
     let mut stderr = child.stderr.take();
 
     let mut first_buf = vec![0u8; 8192];
-    let first_read = tokio::time::timeout(Duration::from_secs(12), stdout.read(&mut first_buf)).await;
+    let first_read = tokio::time::timeout(Duration::from_secs(35), stdout.read(&mut first_buf)).await;
     let first_len = match first_read {
         Ok(Ok(n)) if n > 0 => n,
         Ok(Ok(_)) => {
@@ -845,9 +856,16 @@ mod tests {
         hdrs.insert("Referer".into(), "https://ref.example/".into());
         let args = ffmpeg::build_transcode_args("https://cdn.example/video.mkv", &hdrs, 1, 95.5, true);
         assert!(args.windows(2).any(|w| w == ["-ss", "95.50"]));
+        assert!(args.windows(2).any(|w| w == ["-rw_timeout", "15000000"]));
+        assert!(args.windows(2).any(|w| w == ["-probesize", "1048576"]));
         assert!(args.windows(2).any(|w| w == ["-user_agent", "AgentInjected: bad"]));
         assert!(args.windows(2).any(|w| w == ["-map", "0:a:1?"]));
         assert!(args.windows(2).any(|w| w == ["-c:v", "copy"]));
+
+        let transcode_args =
+            ffmpeg::build_transcode_args("https://cdn.example/video.mkv", &hdrs, 0, 0.0, false);
+        assert!(transcode_args.windows(2).any(|w| w == ["-preset", "ultrafast"]));
+        assert!(transcode_args.windows(2).any(|w| w == ["-tune", "zerolatency"]));
 
         let tags = serde_json::json!([
             { "name": "v0.6.1" },
@@ -864,5 +882,48 @@ mod tests {
             summarize_ffmpeg_stderr(sample_err),
             "Server returned 404 Not Found"
         );
+    }
+
+    #[tokio::test]
+    async fn transcode_proxy_handles_head_and_upstream_404_cleanly() {
+        let Some(_) = ffmpeg::resolve_ffmpeg_exe(None) else {
+            return;
+        };
+        let dead_app = Router::new().route("/missing.mkv", get(|| async { StatusCode::NOT_FOUND }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let dead_addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, dead_app).await;
+        });
+
+        let client = Client::new();
+        let proxy = StreamProxy::start(client.clone()).await;
+        let sess = proxy
+            .register_session(&format!("http://{dead_addr}/missing.mkv"), HashMap::new())
+            .unwrap();
+
+        let head_resp = client
+            .head(format!("{}&audioTrack=0&startSec=0&copyVideo=true", sess.transcode_base_url))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(head_resp.status(), reqwest::StatusCode::OK);
+
+        let trans_resp = client
+            .get(format!("{}&audioTrack=0&startSec=0&copyVideo=true", sess.transcode_base_url))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(trans_resp.status(), reqwest::StatusCode::BAD_GATEWAY);
+
+        let err_text = client
+            .get(format!("http://127.0.0.1:{}/transcode-error?session={}", proxy.port(), sess.session_id))
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert!(err_text.contains("404"), "expected 404 in /transcode-error, got `{err_text}`");
     }
 }
