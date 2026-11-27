@@ -603,14 +603,37 @@ pub async fn probe_media(
     target: &str,
     headers: &HashMap<String, String>,
 ) -> Result<MediaProbeResult, MediaError> {
-    validate_media_target(target)?;
-    let trimmed = target.trim();
-    let is_http = trimmed.starts_with("http://") || trimmed.starts_with("https://");
+    probe_media_with_input(ffprobe_path, target, target, headers).await
+}
+
+pub async fn probe_media_with_input(
+    ffprobe_path: &Path,
+    input_target: &str,
+    original_target: &str,
+    headers: &HashMap<String, String>,
+) -> Result<MediaProbeResult, MediaError> {
+    validate_media_target(input_target)?;
+    let trimmed = input_target.trim();
+    let is_remote_http = (trimmed.starts_with("http://") || trimmed.starts_with("https://"))
+        && !trimmed.starts_with("http://127.0.0.1:");
 
     let mut cmd = TokioCommand::new(ffprobe_path);
-    cmd.args(["-v", "quiet", "-print_format", "json", "-show_format", "-show_streams"]);
-    if is_http {
+    cmd.args([
+        "-v",
+        "quiet",
+        "-probesize",
+        "1048576",
+        "-analyzeduration",
+        "1500000",
+        "-print_format",
+        "json",
+        "-show_format",
+        "-show_streams",
+    ]);
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
         cmd.args(["-rw_timeout", "8000000"]);
+    }
+    if is_remote_http {
         let (ua, hdrs) = format_ffmpeg_headers(headers);
         if let Some(u) = ua {
             cmd.args(["-user_agent", &u]);
@@ -635,7 +658,7 @@ pub async fn probe_media(
 
     let root: Value = serde_json::from_slice(&out.stdout)
         .map_err(|e| MediaError::Ffmpeg(format!("Invalid ffprobe JSON: {e}")))?;
-    Ok(parse_ffprobe_json(&root, trimmed))
+    Ok(parse_ffprobe_json(&root, original_target.trim()))
 }
 
 pub fn parse_ffprobe_json(root: &Value, target: &str) -> MediaProbeResult {
@@ -830,10 +853,13 @@ pub fn build_transcode_args(
 ) -> Vec<String> {
     let trimmed = target.trim();
     let is_http = trimmed.starts_with("http://") || trimmed.starts_with("https://");
+    let is_local_proxy = trimmed.starts_with("http://127.0.0.1:");
     let mut args: Vec<String> = vec![
         "-hide_banner".into(),
         "-loglevel".into(),
         "error".into(),
+        "-threads".into(),
+        "0".into(),
         "-fflags".into(),
         "+genpts+discardcorrupt".into(),
         "-probesize".into(),
@@ -843,22 +869,23 @@ pub fn build_transcode_args(
     ];
 
     if is_http {
-        args.extend([
-            "-rw_timeout".into(),
-            "15000000".into(),
-            "-reconnect".into(),
-            "1".into(),
-            "-reconnect_streamed".into(),
-            "1".into(),
-            "-reconnect_delay_max".into(),
-            "5".into(),
-        ]);
-        let (ua, hdrs) = format_ffmpeg_headers(headers);
-        if let Some(u) = ua {
-            args.extend(["-user_agent".into(), u]);
-        }
-        if let Some(h) = hdrs {
-            args.extend(["-headers".into(), h]);
+        args.extend(["-rw_timeout".into(), "15000000".into()]);
+        if !is_local_proxy {
+            args.extend([
+                "-reconnect".into(),
+                "1".into(),
+                "-reconnect_streamed".into(),
+                "1".into(),
+                "-reconnect_delay_max".into(),
+                "5".into(),
+            ]);
+            let (ua, hdrs) = format_ffmpeg_headers(headers);
+            if let Some(u) = ua {
+                args.extend(["-user_agent".into(), u]);
+            }
+            if let Some(h) = hdrs {
+                args.extend(["-headers".into(), h]);
+            }
         }
     }
 
@@ -881,6 +908,8 @@ pub fn build_transcode_args(
         args.extend(["-c:v".into(), "copy".into()]);
     } else {
         args.extend([
+            "-vf".into(),
+            "scale=w='if(gt(iw,1920),1280,trunc(iw/2)*2)':h=-2:flags=fast_bilinear".into(),
             "-c:v".into(),
             "libx264".into(),
             "-preset".into(),
@@ -888,7 +917,7 @@ pub fn build_transcode_args(
             "-tune".into(),
             "zerolatency".into(),
             "-crf".into(),
-            "23".into(),
+            "24".into(),
             "-pix_fmt".into(),
             "yuv420p".into(),
             "-g".into(),
@@ -911,6 +940,8 @@ pub fn build_transcode_args(
         "mp4".into(),
         "-movflags".into(),
         "frag_keyframe+empty_moov+default_base_moof+omit_tfhd_offset".into(),
+        "-flush_packets".into(),
+        "1".into(),
         "-reset_timestamps".into(),
         "1".into(),
         "pipe:1".into(),

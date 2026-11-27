@@ -10,7 +10,7 @@ use iptvmine_m3u::{
 use iptvmine_media::{
     check_ffmpeg_status_with_upstream, detect_ffmpeg_status,
     install_latest_ffmpeg as download_latest_ffmpeg, launch_external_player as spawn_external_player,
-    probe_media, FfmpegStatus, MediaProbeResult, ProxiedStream, StreamProxy,
+    probe_media_with_input, FfmpegStatus, MediaProbeResult, ProxiedStream, StreamProxy,
 };
 use iptvmine_net::{DnsTestResult, DohState};
 use iptvmine_storage::Storage;
@@ -625,6 +625,7 @@ async fn install_ffmpeg_runtime(
 async fn probe_media_info(
     target: String,
     headers: Option<HashMap<String, String>>,
+    proxy_url: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<MediaProbeResult, String> {
     let settings = state.storage.get_app_settings().unwrap_or_default();
@@ -637,8 +638,14 @@ async fn probe_media_info(
     let Some(probe_exe) = status.ffprobe_path else {
         return Err("ffprobe is not installed. Install FFmpeg in Preferences to inspect tracks and codecs.".into());
     };
-    probe_media(
+    let input = proxy_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&target);
+    probe_media_with_input(
         std::path::Path::new(&probe_exe),
+        input,
         &target,
         &headers.unwrap_or_default(),
     )

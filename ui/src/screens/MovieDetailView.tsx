@@ -365,8 +365,13 @@ export function MovieDetailView({ post, scraperValue, onBack, onPlayStream }: Pr
                     className="ott-play-cta"
                     disabled={resolving}
                     onClick={() => {
-                      const dl = activeServer?.directLinks?.[0] ?? lazyEpisodes[0]?.directLinks?.[0];
-                      const title = activeServer?.directLinks?.[0]?.title ?? lazyEpisodes[0]?.title ?? "";
+                      const dls = activeServer?.directLinks ?? [];
+                      const preferredDl =
+                        dls.find((d) => /\b1080p\b/i.test(d.title)) ??
+                        dls.find((d) => !/\b(2160p|4k|uhd)\b/i.test(d.title) && !/\b([2-9]\d|\d{3,})\s*gb\b/i.test(d.title)) ??
+                        dls[0];
+                      const dl = preferredDl ?? lazyEpisodes[0]?.directLinks?.[0];
+                      const title = preferredDl?.title ?? lazyEpisodes[0]?.title ?? "";
                       if (!dl) return;
                       void resolveStream(dl.link, title, dl.type || meta.type);
                     }}

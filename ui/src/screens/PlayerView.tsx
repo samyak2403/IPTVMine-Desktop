@@ -184,6 +184,8 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
     () => ffmpegEnabled && needsContainerRemux(activeStream.link)
   );
   const [ffmpegSeekSec, setFfmpegSeekSec] = useState(0);
+  const ffmpegSeekRef = useRef(0);
+  const [ffmpegSeekTick, setFfmpegSeekTick] = useState(0);
   const [ffmpegAudioIdx, setFfmpegAudioIdx] = useState(0);
   const [ffmpegReadyTick, setFfmpegReadyTick] = useState(0);
   const [ffmpegForceTranscode, setFfmpegForceTranscode] = useState(false);
@@ -193,6 +195,9 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
   const statusNoticeRef = useRef("");
   const noticeTimedRef = useRef(false);
   const noticeTimerRef = useRef<number | null>(null);
+  const waitingTimerRef = useRef<number | null>(null);
+  const stallTimestampsRef = useRef<number[]>([]);
+  const saveProgressRef = useRef<(() => Promise<void>) | null>(null);
   const [resolvingNext, setResolvingNext] = useState(false);
 
   const setStatusNotice = useCallback((msg: string) => {
@@ -220,10 +225,51 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
     }, ms);
   }, []);
 
+  const clearBuffering = useCallback(() => {
+    if (waitingTimerRef.current !== null) {
+      window.clearTimeout(waitingTimerRef.current);
+      waitingTimerRef.current = null;
+    }
+    setBuffering(false);
+  }, []);
+
+  const scheduleBuffering = useCallback(() => {
+    if (waitingTimerRef.current !== null) {
+      window.clearTimeout(waitingTimerRef.current);
+    }
+    waitingTimerRef.current = window.setTimeout(() => {
+      waitingTimerRef.current = null;
+      setBuffering(true);
+      const vid = videoRef.current;
+      if (vid && !vid.paused && vid.currentTime > 1 && mirrorIdx + 1 < mirrors.length) {
+        const now = Date.now();
+        const recent = stallTimestampsRef.current.filter((ts) => now - ts < 20_000);
+        recent.push(now);
+        stallTimestampsRef.current = recent;
+        if (recent.length >= 3) {
+          stallTimestampsRef.current = [];
+          void saveProgressRef.current?.();
+          setStatusNotice("Persistent buffering; switching to smoother mirror...");
+          setMirrorIdx((i) => i + 1);
+        }
+      }
+    }, 250);
+  }, [mirrorIdx, mirrors.length, setStatusNotice]);
+
+  const commitFfmpegSeek = useCallback((sec: number) => {
+    const clean = Math.max(0, Math.floor(sec));
+    ffmpegSeekRef.current = clean;
+    setFfmpegSeekSec(clean);
+    setFfmpegSeekTick((t) => t + 1);
+  }, []);
+
   useEffect(
     () => () => {
       if (noticeTimerRef.current !== null) {
         window.clearTimeout(noticeTimerRef.current);
+      }
+      if (waitingTimerRef.current !== null) {
+        window.clearTimeout(waitingTimerRef.current);
       }
     },
     []
@@ -387,6 +433,8 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
     });
   }
 
+  saveProgressRef.current = saveCurrentProgress;
+
   useEffect(() => {
     setMirrorIdx(0);
     setLiveMirrors(null);
@@ -394,6 +442,8 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
   }, [request.link, request.streamUrl]);
 
   useEffect(() => {
+    ffmpegSeekRef.current = 0;
+    stallTimestampsRef.current = [];
     setFfmpegSeekSec(0);
     setFfmpegAudioIdx(0);
     setSelectedAudio(0);
@@ -515,8 +565,12 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
           (!lower.includes(".m3u8") && !request.isLive));
 
       if (shouldProbe && !probe) {
+        const directHttpProxyUrl =
+          (lower.startsWith("http://") || lower.startsWith("https://")) && !lower.includes(".m3u8")
+            ? proxied.proxyUrl
+            : undefined;
         probe = await api
-          .probeMediaInfo(activeStream.link, mergedHeaders)
+          .probeMediaInfo(activeStream.link, mergedHeaders, directHttpProxyUrl)
           .catch(() => null);
         if (cancelled) return;
         if (probe) {
@@ -547,7 +601,7 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
 
       if (useFfmpeg) {
         if (!ffStatus?.installed) {
-          setBuffering(false);
+          clearBuffering();
           if (ffStatus?.installing) {
             waitingForFfmpegRef.current = true;
             setStatusNotice("Setting up FFmpeg automatically...");
@@ -559,19 +613,19 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
           return;
         }
         const initialSeek =
-          ffmpegSeekSec > 0
-            ? ffmpegSeekSec
+          ffmpegSeekRef.current > 0
+            ? ffmpegSeekRef.current
             : resumeMs > 5000 &&
                 (!probe?.durationSec || resumeMs / 1000 < probe.durationSec - 5)
               ? Math.floor(resumeMs / 1000)
               : 0;
-        if (initialSeek !== ffmpegSeekSec && ffmpegSeekSec === 0 && initialSeek > 0) {
+        if (initialSeek !== ffmpegSeekRef.current) {
+          ffmpegSeekRef.current = initialSeek;
           setFfmpegSeekSec(initialSeek);
-          return;
         }
         const vc = (probe?.videoCodec || "").toLowerCase();
         const copyVideo = !ffmpegForceTranscode && (!vc || vc === "h264" || vc === "avc1");
-        const transcodeUrl = `${proxied.transcodeBaseUrl}&audioTrack=${ffmpegAudioIdx}&startSec=${ffmpegSeekSec}&copyVideo=${copyVideo}`;
+        const transcodeUrl = `${proxied.transcodeBaseUrl}&audioTrack=${ffmpegAudioIdx}&startSec=${initialSeek}&copyVideo=${copyVideo}`;
         setStatusNotice(
           copyVideo ? "FFmpeg Remux (Direct Video)" : `FFmpeg Live Transcode (${vc.toUpperCase()})`
         );
@@ -614,9 +668,20 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
       ) {
         const hls = new Hls({
           enableWorker: true,
-          lowLatencyMode: Boolean(request.isLive),
+          lowLatencyMode: false,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60,
+          backBufferLength: 30,
+          liveSyncDurationCount: 3,
+          liveMaxLatencyDurationCount: 8,
+          fragLoadingMaxRetry: 6,
+          fragLoadingRetryDelay: 800,
+          manifestLoadingMaxRetry: 4,
+          levelLoadingMaxRetry: 4,
+          startFragPrefetch: true,
         });
         hlsRef.current = hls;
+        let hlsRecoveryCount = 0;
         hls.loadSource(playUrl);
         hls.attachMedia(video);
 
@@ -641,9 +706,9 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
 
         hls.on(Hls.Events.ERROR, (_, data) => {
           if (data.fatal) {
-            setBuffering(false);
             const httpCode = data.response?.code;
             if (httpCode === 404 || httpCode === 410) {
+              clearBuffering();
               hls.destroy();
               hlsRef.current = null;
               setStatusNotice("");
@@ -652,12 +717,28 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
               );
               return;
             }
-            if (data.type === Hls.ErrorTypes.NETWORK_ERROR && !looksHls) {
-              hls.destroy();
-              hlsRef.current = null;
-              video.src = playUrl;
-              video.onloadedmetadata = attachResume;
-            } else if (ffStatus?.installed && !useFfmpeg) {
+            if (hlsRecoveryCount < 2) {
+              if (data.type === Hls.ErrorTypes.NETWORK_ERROR && !looksHls) {
+                clearBuffering();
+                hls.destroy();
+                hlsRef.current = null;
+                video.src = playUrl;
+                video.onloadedmetadata = attachResume;
+                return;
+              }
+              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                hlsRecoveryCount += 1;
+                hls.startLoad();
+                return;
+              }
+              if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                hlsRecoveryCount += 1;
+                hls.recoverMediaError();
+                return;
+              }
+            }
+            clearBuffering();
+            if (ffStatus?.installed && !useFfmpeg) {
               hls.destroy();
               hlsRef.current = null;
               setStatusNotice("Auto-switching to FFmpeg Remux...");
@@ -684,7 +765,7 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
         hlsRef.current = null;
       }
     };
-  }, [activeStream.link, mirrorIdx, request.link, useFfmpeg, ffmpegSeekSec, ffmpegAudioIdx, ffmpegReadyTick, ffmpegForceTranscode]);
+  }, [activeStream.link, mirrorIdx, request.link, useFfmpeg, ffmpegSeekTick, ffmpegAudioIdx, ffmpegReadyTick, ffmpegForceTranscode]);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -705,7 +786,7 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
       effectiveDuration > 0 ? Math.min(effectiveDuration, livePlaybackTime + deltaSec) : livePlaybackTime + deltaSec
     );
     if (useFfmpeg) {
-      setFfmpegSeekSec(Math.floor(target));
+      commitFfmpegSeek(target);
     } else if (videoRef.current) {
       videoRef.current.currentTime = target;
       setCurrentTime(target);
@@ -1000,7 +1081,7 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
     if (commit && targetFrac !== null && effectiveDuration > 0) {
       const targetSec = targetFrac * effectiveDuration;
       if (useFfmpeg) {
-        setFfmpegSeekSec(Math.floor(targetSec));
+        commitFfmpegSeek(targetSec);
       } else if (videoRef.current) {
         videoRef.current.currentTime = targetSec;
         setCurrentTime(targetSec);
@@ -1077,18 +1158,18 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
           style={{ objectFit: fitMode }}
           onPlay={() => {
             setPlaying(true);
-            setBuffering(false);
+            clearBuffering();
             bumpHud("pointer");
           }}
           onPlaying={() => {
-            setBuffering(false);
+            clearBuffering();
             if (!noticeTimedRef.current && statusNoticeRef.current) {
               setStatusNotice("");
             }
           }}
-          onWaiting={() => setBuffering(true)}
+          onWaiting={scheduleBuffering}
           onCanPlay={() => {
-            setBuffering(false);
+            clearBuffering();
             if (!noticeTimedRef.current && statusNoticeRef.current) {
               setStatusNotice("");
             }
@@ -1128,7 +1209,7 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
           }}
           onError={() => {
             void (async () => {
-              setBuffering(false);
+              clearBuffering();
               if (!useFfmpeg && ffmpegStatus?.installed && (!probeResult || probeResult.needsTranscode)) {
                 if (hlsRef.current) {
                   hlsRef.current.destroy();
@@ -1578,12 +1659,16 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
                               onClick={() => {
                                 setSelectedAudio(a.index);
                                 if (useFfmpeg) {
-                                  setFfmpegSeekSec(Math.floor(livePlaybackTime));
+                                  const clean = Math.max(0, Math.floor(livePlaybackTime));
+                                  ffmpegSeekRef.current = clean;
+                                  setFfmpegSeekSec(clean);
                                   setFfmpegAudioIdx(a.index);
                                 } else if (hlsRef.current) {
                                   hlsRef.current.audioTrack = a.index;
                                 } else if (ffmpegStatus?.installed) {
-                                  setFfmpegSeekSec(Math.floor(livePlaybackTime));
+                                  const clean = Math.max(0, Math.floor(livePlaybackTime));
+                                  ffmpegSeekRef.current = clean;
+                                  setFfmpegSeekSec(clean);
                                   setFfmpegAudioIdx(a.index);
                                   setUseFfmpeg(true);
                                 }
@@ -1726,7 +1811,9 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
                         type="button"
                         className={`player-menu-item${useFfmpeg ? " active" : ""}`}
                         onClick={() => {
-                          setFfmpegSeekSec(useFfmpeg ? 0 : Math.floor(livePlaybackTime));
+                          const nextSeek = useFfmpeg ? 0 : Math.floor(livePlaybackTime);
+                          ffmpegSeekRef.current = nextSeek;
+                          setFfmpegSeekSec(nextSeek);
                           setUseFfmpeg((prev) => !prev);
                           setOpenPopover(null);
                         }}

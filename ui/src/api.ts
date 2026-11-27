@@ -160,10 +160,11 @@ export const api = {
   getFfmpegStatus: () => invoke<FfmpegStatus>("get_ffmpeg_status"),
   checkFfmpegUpstreamStatus: () => invoke<FfmpegStatus>("check_ffmpeg_upstream_status"),
   installFfmpegRuntime: () => invoke<FfmpegStatus>("install_ffmpeg_runtime"),
-  probeMediaInfo: (target: string, headers?: Record<string, string>) =>
+  probeMediaInfo: (target: string, headers?: Record<string, string>, proxyUrl?: string) =>
     invoke<MediaProbeResult>("probe_media_info", {
       target,
       headers: headers ?? null,
+      proxyUrl: proxyUrl ?? null,
     }),
   launchExternalPlayer: (
     streamUrl: string,

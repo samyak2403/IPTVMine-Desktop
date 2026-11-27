@@ -157,8 +157,13 @@ impl StreamFallbackEngine {
                     .and_then(|m| m.get(&host))
                     .map(|h| h.score(now))
                     .unwrap_or(0);
-                // Preserve structural base score while penalizing degraded hosts
-                let base_score = 1000_i32 - (idx as i32 * 5) + health_bonus;
+                // Demote extreme >20 GiB files (typically >50 Mbps 4K remuxes) below smooth 1080p mirrors
+                let size_penalty = match parse_stream_gib(&s) {
+                    Some(gib) if gib > 20.0 => -25,
+                    _ => 0,
+                };
+                // Preserve structural base score while penalizing degraded or oversized hosts
+                let base_score = 1000_i32 - (idx as i32 * 5) + health_bonus + size_penalty;
                 (idx, base_score, s)
             })
             .collect();
@@ -984,5 +989,54 @@ mod tests {
         assert_eq!(res.all_streams.len(), 1);
         assert_eq!(res.selected_stream.unwrap().link, mirror.stream_url);
         assert!(res.error.is_none());
+    }
+
+    #[test]
+    fn rank_streams_prefers_playable_1080p_over_oversized_4k_remux() {
+        let engine = StreamFallbackEngine::new(Client::new());
+        let uhd_huge = VegaStream {
+            server: "4K HDR".into(),
+            link: "https://cdn.example.com/movie-2160p.mkv".into(),
+            r#type: "mkv".into(),
+            quality: "2160p".into(),
+            size: Some("88 GB".into()),
+            ..Default::default()
+        };
+        let fhd = VegaStream {
+            server: "FHD".into(),
+            link: "https://cdn.example.com/movie-1080p.mkv".into(),
+            r#type: "mkv".into(),
+            quality: "1080p".into(),
+            size: Some("4.5 GB".into()),
+            ..Default::default()
+        };
+
+        let ranked = engine.rank_streams(vec![uhd_huge, fhd]);
+        assert_eq!(ranked.len(), 2);
+        assert_eq!(ranked[0].quality, "1080p");
+        assert_eq!(ranked[1].quality, "2160p");
+    }
+}
+
+fn parse_stream_gib(stream: &VegaStream) -> Option<f64> {
+    let raw = stream.size.as_deref()?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let lower = raw.to_ascii_lowercase();
+    let num_str: String = lower
+        .chars()
+        .skip_while(|c| !c.is_ascii_digit())
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    let val = num_str.parse::<f64>().ok()?;
+    if lower.contains("tb") || lower.contains("tib") {
+        Some(val * 1024.0)
+    } else if lower.contains("mb") || lower.contains("mib") {
+        Some(val / 1024.0)
+    } else if lower.contains("gb") || lower.contains("gib") {
+        Some(val)
+    } else {
+        None
     }
 }
