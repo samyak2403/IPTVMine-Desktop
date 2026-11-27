@@ -8,7 +8,6 @@ import playCircleSvg from "../assets/figma/play-circle.svg";
 import type {
   DetailEnrichment,
   EpisodeItem,
-  FallbackResult,
   PlaybackRequest,
   VegaLink,
   VegaMeta,
@@ -134,7 +133,6 @@ export function MovieDetailView({ post, scraperValue, onBack, onPlayStream }: Pr
   const [resolving, setResolving] = useState(false);
   const [fallbackStatus, setFallbackStatus] = useState("");
   const [downloadNotice, setDownloadNotice] = useState("");
-  const [resolved, setResolved] = useState<FallbackResult | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -236,7 +234,6 @@ export function MovieDetailView({ post, scraperValue, onBack, onPlayStream }: Pr
       if (!res) {
         setError("No playable streams found across available servers or extensions.");
       } else {
-        setResolved(res);
         onPlayStream({
           title: itemTitle ? `${meta?.title || post.title} - ${itemTitle}` : meta?.title || post.title,
           link: post.link,
@@ -488,62 +485,6 @@ export function MovieDetailView({ post, scraperValue, onBack, onPlayStream }: Pr
               );
             })}
           </div>
-
-          {resolved && (
-            <div className="card" style={{ marginTop: 20, display: "grid", gap: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <strong>
-                  Resolved Streams ({resolved.serverTitle})
-                </strong>
-                {resolved.message && <span className="badge">{resolved.message}</span>}
-              </div>
-              {resolved.allStreams.map((st, idx) => (
-                <div
-                  key={`${st.link}-${idx}`}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 12,
-                    padding: "8px 0",
-                    borderTop: "1px solid var(--border-subtle)",
-                  }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <span style={{ fontWeight: 600 }}>{st.server || "Stream"}</span>
-                      <span className="ott-meta-pill">{st.quality || "HD"}</span>
-                      {st.size && (
-                        <span className="ott-meta-pill amber">
-                          <HardDrive size={11} /> {st.size}
-                        </span>
-                      )}
-                      {st.type && <span className="ott-meta-pill">{st.type.toUpperCase()}</span>}
-                    </div>
-                    <div className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis", marginTop: 4 }}>
-                      {st.link}
-                    </div>
-                  </div>
-                  <button
-                    className="btn"
-                    onClick={() =>
-                      onPlayStream({
-                        title: meta.title || post.title,
-                        link: post.link,
-                        streamUrl: st.link,
-                        headers: st.headers ?? undefined,
-                        imageUrl: meta.image || post.image,
-                        scraperValue: resolved.providerValue,
-                        mirrors: resolved.allStreams,
-                      })
-                    }
-                  >
-                    <Play size={14} /> Play
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
         </>
       )}
     </div>
