@@ -1,0 +1,23 @@
+[package]
+name = "iptvmine-vega"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+iptvmine-core.workspace = true
+iptvmine-net.workspace = true
+iptvmine-storage.workspace = true
+iptvmine-m3u.workspace = true
+ego-tree = "0.10"
+regex = "1"
+reqwest.workspace = true
+rquickjs = { version = "0.9", features = ["futures"] }
+scraper = "0.22"
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+uuid.workspace = true

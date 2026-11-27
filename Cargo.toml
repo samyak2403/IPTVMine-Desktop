@@ -1,0 +1,40 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/iptvmine-core",
+    "crates/iptvmine-storage",
+    "crates/iptvmine-net",
+    "crates/iptvmine-m3u",
+    "crates/iptvmine-vega",
+    "crates/iptvmine-media",
+    "crates/iptvmine-downloader",
+    "crates/iptvmine-updater",
+    "src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["IPTVMine Desktop Contributors"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+thiserror = "2"
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "cookies"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+lru = "0.12"
+md-5 = "0.10"
+iptvmine-core = { path = "crates/iptvmine-core" }
+iptvmine-storage = { path = "crates/iptvmine-storage" }
+iptvmine-net = { path = "crates/iptvmine-net" }
+iptvmine-m3u = { path = "crates/iptvmine-m3u" }
+iptvmine-vega = { path = "crates/iptvmine-vega" }
+iptvmine-media = { path = "crates/iptvmine-media" }
+iptvmine-downloader = { path = "crates/iptvmine-downloader" }
+iptvmine-updater = { path = "crates/iptvmine-updater" }

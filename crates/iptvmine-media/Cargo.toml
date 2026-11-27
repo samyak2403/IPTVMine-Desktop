@@ -1,0 +1,17 @@
+[package]
+name = "iptvmine-media"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+axum = "0.8"
+iptvmine-core.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util = { version = "0.7", features = ["io"] }
+tracing.workspace = true
+url.workspace = true
+uuid.workspace = true
