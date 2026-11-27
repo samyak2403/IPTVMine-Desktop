@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Search, RefreshCw } from "lucide-react";
 import { api } from "../api";
-import { formatOttTitle } from "../components/OttUi";
+import { PosterCard } from "../components/OttUi";
 import type { VegaCatalog, VegaPost, VegaProvider } from "../types";
 
 function postKey(post: VegaPost): string {
@@ -332,25 +332,19 @@ export function MoviesView({ initialFilter, onSelectPost, onOpenExtensions }: Pr
       {loading && posts.length === 0 ? (
         <div className="grid-posters">
           {Array.from({ length: 12 }).map((_, i) => (
-            <div key={i} className="shimmer" style={{ aspectRatio: "388 / 580" }} />
+            <div key={i} className="shimmer" style={{ aspectRatio: "2 / 3", borderRadius: 14 }} />
           ))}
         </div>
       ) : (
         <div className="grid-posters">
           {posts.map((post) => (
-            <button
-              type="button"
+            <PosterCard
               key={postKey(post)}
               className="poster-card"
+              title={post.title}
+              image={post.image}
               onClick={() => onSelectPost(post, selectedScraper)}
-            >
-              {post.image ? (
-                <img className="poster-img" src={post.image} alt={post.title} loading="lazy" />
-              ) : (
-                <div className="poster-img" />
-              )}
-              <div className="poster-title">{formatOttTitle(post.title)}</div>
-            </button>
+            />
           ))}
         </div>
       )}

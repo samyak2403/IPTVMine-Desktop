@@ -612,30 +612,167 @@ textarea {
 
 .ott-tall-card {
   position: relative;
-  flex: 0 0 clamp(178px, 17vw, 258px);
-  aspect-ratio: 388 / 642;
-  border-radius: var(--radius-card);
-  overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-surface-solid);
+  flex: 0 0 clamp(172px, 16vw, 240px);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  border: none;
+  background: transparent;
   padding: 0;
   text-align: left;
   cursor: pointer;
+  outline: none;
+}
+
+/* ── Apple TV+ Crafted Poster Card (Home & Movies Grid) ───────────────────── */
+
+.apple-poster-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: 14px;
+  overflow: hidden;
+  background: radial-gradient(circle at 70% 20%, rgba(255, 255, 255, 0.08), rgba(22, 22, 26, 0.96) 72%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.36);
   transition:
-    transform 240ms var(--ease-spring),
+    transform 260ms var(--ease-spring),
     border-color 180ms ease,
-    box-shadow 240ms var(--ease-spring);
+    box-shadow 260ms var(--ease-spring);
+  transform-origin: center center;
 }
 
-.ott-tall-card:hover {
-  transform: translateY(-4px) scale(1.024);
-  border-color: rgba(255, 255, 255, 0.34);
-  box-shadow: 0 22px 44px rgba(0, 0, 0, 0.62);
+.ott-tall-card:hover .apple-poster-frame,
+.poster-card:hover .apple-poster-frame {
+  transform: translateY(-4px) scale(1.022);
+  border-color: rgba(255, 255, 255, 0.36);
+  box-shadow: 0 20px 36px rgba(0, 0, 0, 0.62);
 }
 
-.ott-tall-card:active {
-  transform: scale(0.97);
+.ott-tall-card:focus-visible .apple-poster-frame,
+.poster-card:focus-visible .apple-poster-frame {
+  border-color: var(--accent-amber);
+  box-shadow:
+    0 0 0 2.5px var(--accent-amber),
+    0 18px 34px rgba(0, 0, 0, 0.62);
+}
+
+.ott-tall-card:active .apple-poster-frame,
+.poster-card:active .apple-poster-frame {
+  transform: scale(0.965);
   transition: transform 90ms ease-out;
+}
+
+.apple-poster-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  opacity: 0;
+  transform: scale(1);
+  transition:
+    opacity 240ms ease,
+    transform 320ms var(--ease-spring);
+  pointer-events: none;
+}
+
+.apple-poster-img.loaded {
+  opacity: 1;
+}
+
+.ott-tall-card:hover .apple-poster-img.loaded,
+.poster-card:hover .apple-poster-img.loaded {
+  transform: scale(1.035);
+}
+
+.apple-poster-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.32);
+  background: radial-gradient(circle at 75% 22%, rgba(255, 192, 98, 0.16), rgba(20, 20, 24, 1) 70%);
+}
+
+.apple-poster-rim {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  pointer-events: none;
+}
+
+.apple-poster-play {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(18, 18, 22, 0.62);
+  backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  color: #ffffff;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transform: scale(0.86);
+  transition:
+    opacity 180ms ease,
+    transform 220ms var(--ease-spring),
+    background-color 160ms ease;
+  pointer-events: none;
+}
+
+.ott-tall-card:hover .apple-poster-play,
+.ott-tall-card:focus-visible .apple-poster-play,
+.poster-card:hover .apple-poster-play,
+.poster-card:focus-visible .apple-poster-play {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.apple-poster-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 2px;
+  min-width: 0;
+}
+
+.apple-poster-meta {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: 0.015em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ott-tall-card .ott-tall-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.24;
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
+  text-shadow: none;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  transition: color 160ms ease;
+}
+
+.ott-tall-card:hover .ott-tall-title,
+.ott-tall-card:focus-visible .ott-tall-title {
+  color: #ffffff;
 }
 
 .ott-card-media {
@@ -886,63 +1023,42 @@ textarea {
 
 .grid-posters {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+  gap: 24px 18px;
 }
 
 .poster-card {
   position: relative;
-  background: var(--bg-surface-solid);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  overflow: hidden;
+  width: 100%;
+  background: transparent;
+  border: none;
   padding: 0;
   text-align: left;
   cursor: pointer;
-  aspect-ratio: 388 / 580;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  transition:
-    transform 220ms var(--ease-spring),
-    border-color 180ms ease,
-    box-shadow 220ms var(--ease-spring);
-}
-
-.poster-card:hover {
-  transform: translateY(-4px) scale(1.02);
-  border-color: rgba(255, 255, 255, 0.35);
-  box-shadow: 0 20px 38px rgba(0, 0, 0, 0.56);
-}
-
-.poster-card:active {
-  transform: scale(0.97);
-  transition: transform 90ms ease-out;
-}
-
-.poster-img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  background: rgba(255, 255, 255, 0.04);
+  align-items: stretch;
+  gap: 10px;
+  outline: none;
 }
 
 .poster-title {
-  position: relative;
-  z-index: 2;
-  padding: 36px 14px 14px;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.2;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.24;
   letter-spacing: -0.015em;
-  color: #ffffff;
-  background: linear-gradient(0deg, rgba(0, 0, 0, 0.92) 22%, rgba(0, 0, 0, 0) 100%);
+  color: var(--text-primary);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  transition: color 160ms ease;
+}
+
+.poster-card:hover .poster-title,
+.poster-card:focus-visible .poster-title {
+  color: #ffffff;
 }
 
 .chip-row {
@@ -2511,6 +2627,13 @@ textarea {
   .ott-landscape-card:hover,
   .ott-tall-card:hover,
   .poster-card:hover,
+  .ott-tall-card:hover .apple-poster-frame,
+  .poster-card:hover .apple-poster-frame,
+  .ott-tall-card:active .apple-poster-frame,
+  .poster-card:active .apple-poster-frame,
+  .ott-tall-card:hover .apple-poster-img,
+  .poster-card:hover .apple-poster-img,
+  .apple-poster-play,
   .ott-nav-item:hover {
     transform: none !important;
   }
@@ -2523,6 +2646,7 @@ textarea {
   .ott-nav-tooltip,
   .ott-status-pill,
   .ott-glass-pill,
+  .apple-poster-play,
   .player-hud-top,
   .player-hud-bottom,
   .player-popover,
@@ -2539,5 +2663,8 @@ textarea {
   :root {
     --border-subtle: rgba(255, 255, 255, 0.28);
     --border-bright: rgba(255, 255, 255, 0.55);
+  }
+  .apple-poster-frame {
+    border-color: rgba(255, 255, 255, 0.48);
   }
 }

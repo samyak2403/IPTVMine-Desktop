@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Film, Play } from "lucide-react";
 import playCircleSvg from "../assets/figma/play-circle.svg";
 
 export function formatOttTitle(raw: string): string {
@@ -10,6 +10,83 @@ export function formatOttTitle(raw: string): string {
     .replace(/\s+/g, " ")
     .trim();
   return cleaned || raw.trim();
+}
+
+export function splitPosterCaption(raw: string, explicitSubtitle?: string): {
+  title: string;
+  meta?: string;
+} {
+  const formatted = formatOttTitle(raw);
+  const yearMatch = formatted.match(/^(.*?)\s*\(((?:19|20)\d{2})\)\s*$/);
+  if (yearMatch && yearMatch[1].trim()) {
+    return {
+      title: yearMatch[1].trim(),
+      meta: explicitSubtitle || yearMatch[2],
+    };
+  }
+  return { title: formatted, meta: explicitSubtitle };
+}
+
+export interface PosterCardProps {
+  title: string;
+  subtitle?: string;
+  image?: string;
+  className?: string;
+  onClick: () => void;
+}
+
+export function PosterCard({
+  title,
+  subtitle,
+  image,
+  className = "poster-card",
+  onClick,
+}: PosterCardProps) {
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [imgFailed, setImgFailed] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const caption = splitPosterCaption(title, subtitle);
+
+  useEffect(() => {
+    setImgFailed(false);
+    const el = imgRef.current;
+    setImgLoaded(Boolean(el && el.complete && el.naturalWidth > 0));
+  }, [image]);
+
+  return (
+    <button type="button" className={className} onClick={onClick}>
+      <div className="apple-poster-frame">
+        {image && !imgFailed ? (
+          <img
+            ref={imgRef}
+            className={`apple-poster-img poster-img${imgLoaded ? " loaded" : ""}`}
+            src={image}
+            alt={caption.title}
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+            draggable={false}
+            onLoad={() => setImgLoaded(true)}
+            onError={() => setImgFailed(true)}
+          />
+        ) : (
+          <div className="apple-poster-fallback" aria-hidden="true">
+            <Film size={24} />
+          </div>
+        )}
+        <div className="apple-poster-rim" aria-hidden="true" />
+        <span className="apple-poster-play" aria-hidden="true">
+          <Play size={14} fill="currentColor" style={{ marginLeft: 1 }} />
+        </span>
+      </div>
+      <div className="apple-poster-caption">
+        <h3 className={className.includes("ott-tall-card") ? "ott-tall-title" : "poster-title"}>
+          {caption.title}
+        </h3>
+        {caption.meta && <div className="apple-poster-meta">{caption.meta}</div>}
+      </div>
+    </button>
+  );
 }
 
 export interface OttCardItem {
@@ -326,14 +403,27 @@ export function OttCarousel({ title, variant, items, headerAction }: CarouselPro
         onPointerUp={handlePointerEnd}
         onPointerCancel={handlePointerEnd}
       >
-        {items.map((item) => (
-          <OttCard
-            key={item.id}
-            item={item}
-            cardClass={cardClass}
-            canClick={() => !dragState.current.moved}
-          />
-        ))}
+        {items.map((item) =>
+          variant === "tall" ? (
+            <PosterCard
+              key={item.id}
+              className={cardClass}
+              title={item.title}
+              subtitle={item.subtitle}
+              image={item.image}
+              onClick={() => {
+                if (!dragState.current.moved) item.onClick();
+              }}
+            />
+          ) : (
+            <OttCard
+              key={item.id}
+              item={item}
+              cardClass={cardClass}
+              canClick={() => !dragState.current.moved}
+            />
+          )
+        )}
       </div>
     </section>
   );
