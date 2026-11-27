@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Cpu, Download, Pencil, Play, RefreshCw, Trash2, Upload } from "lucide-react";
 import { api, isTauriRuntime } from "./api";
 import { ChannelLogo } from "./components/ChannelLogo";
 import { formatOttTitle, HeroMarquee, MidBanner, OttCarousel, type OttCardItem } from "./components/OttUi";
 import { DownloadsView } from "./screens/DownloadsView";
+import { DnsSettingsView } from "./screens/DnsSettingsView";
 import { ExtensionsView } from "./screens/ExtensionsView";
 import { MovieDetailView } from "./screens/MovieDetailView";
 import { MoviesView } from "./screens/MoviesView";
@@ -82,6 +83,8 @@ export function App() {
   const [homeFeed, setHomeFeed] = useState<HomeVodFeed | null>(null);
   const [heroIdx, setHeroIdx] = useState(0);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const settingsRef = useRef<AppSettings>(DEFAULT_SETTINGS);
+  settingsRef.current = settings;
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [loadingChannels, setLoadingChannels] = useState(false);
 
@@ -647,8 +650,12 @@ export function App() {
   }
 
   async function updateSettings(patch: Partial<AppSettings>) {
-    const next = { ...settings, ...patch };
+    const next = { ...settingsRef.current, ...patch };
+    settingsRef.current = next;
     setSettings(next);
+    if ("dnsMode" in patch || "customDohUrl" in patch) {
+      setDnsTest(null);
+    }
     await api.saveAppSettings(next);
   }
 
@@ -1529,47 +1536,15 @@ export function App() {
             {route === "legal" && <LegalView onBack={() => setRoute("settings")} />}
 
             {route === "dns" && (
-              <div style={{ display: "grid", gap: 16 }}>
-                <div className="page-header" style={{ marginBottom: 0 }}>
-                  <h1 className="page-title">DNS over HTTPS</h1>
-                </div>
-                <div className="card" style={{ display: "grid", gap: 10 }}>
-                  {(["cloudflare", "google", "adguard", "custom", "off"] as DnsMode[]).map((mode) => (
-                    <label key={mode} style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                      <input
-                        type="radio"
-                        name="dnsMode"
-                        checked={settings.dnsMode === mode}
-                        onChange={() => void updateSettings({ dnsMode: mode })}
-                      />
-                      <span style={{ textTransform: "capitalize" }}>{mode}</span>
-                    </label>
-                  ))}
-                  {settings.dnsMode === "custom" && (
-                    <input
-                      className="input"
-                      placeholder="https://dns.example.com/dns-query"
-                      value={settings.customDohUrl}
-                      onChange={(e) => void updateSettings({ customDohUrl: e.target.value })}
-                    />
-                  )}
-                  <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      disabled={testingDns}
-                      onClick={() => void runDnsTest(settings.dnsMode)}
-                    >
-                      {testingDns ? "Testing..." : "Test DNS Latency"}
-                    </button>
-                    {dnsTest && (
-                      <span className="muted">
-                        {dnsTest.success ? `Connected (${dnsTest.latencyMs} ms)` : "Lookup failed"}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
+              <DnsSettingsView
+                dnsMode={settings.dnsMode}
+                customDohUrl={settings.customDohUrl}
+                dnsTest={dnsTest}
+                testingDns={testingDns}
+                onSelectMode={(mode) => void updateSettings({ dnsMode: mode })}
+                onCustomUrlChange={(customDohUrl) => void updateSettings({ customDohUrl })}
+                onRunTest={(mode) => void runDnsTest(mode)}
+              />
             )}
           </div>
         )}
