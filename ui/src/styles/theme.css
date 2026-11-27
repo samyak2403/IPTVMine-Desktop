@@ -3789,3 +3789,197 @@ textarea {
     border-color: rgba(255, 255, 255, 0.25);
   }
 }
+
+/* ── Apple TV Vertical Live Channel Cards ──────────────────────────────────── */
+
+.live-vcard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 24px 18px;
+}
+
+.live-vcard {
+  position: relative;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  outline: none;
+}
+
+.live-vcard:focus-visible {
+  outline: none;
+}
+
+.live-vcard-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 10px;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(255, 192, 98, 0.14), rgba(22, 22, 26, 0.96) 72%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.36);
+  transition:
+    transform 260ms var(--ease-spring),
+    border-color 180ms ease,
+    box-shadow 260ms var(--ease-spring);
+  transform-origin: center center;
+}
+
+.live-vcard:hover .live-vcard-frame {
+  transform: translateY(-4px) scale(1.022);
+  border-color: rgba(255, 255, 255, 0.34);
+  box-shadow: 0 20px 36px rgba(0, 0, 0, 0.6);
+}
+
+.live-vcard:focus-visible .live-vcard-frame {
+  border-color: var(--accent-amber);
+  box-shadow:
+    0 0 0 2.5px var(--accent-amber),
+    0 18px 34px rgba(0, 0, 0, 0.62);
+}
+
+.live-vcard:active .live-vcard-frame {
+  transform: scale(0.965);
+  transition: transform 90ms ease-out;
+}
+
+.live-vcard-top {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.live-vcard-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(12, 12, 16, 0.72);
+  backdrop-filter: blur(12px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
+.live-vcard-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-live);
+  box-shadow: 0 0 8px rgba(100, 221, 23, 0.65);
+}
+
+.live-vcard-stage {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 6px;
+}
+
+.live-vcard-emblem {
+  transition: transform 280ms var(--ease-spring);
+}
+
+.live-vcard-emblem .channel-logo-box {
+  border-radius: 20px;
+  padding: 11px;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.38);
+}
+
+.live-vcard-emblem .channel-logo-fallback {
+  font-size: 20px;
+  letter-spacing: 0.05em;
+}
+
+.live-vcard:hover .live-vcard-emblem,
+.live-vcard:focus-visible .live-vcard-emblem {
+  transform: scale(1.06);
+}
+
+.live-vcard:hover .apple-poster-play,
+.live-vcard:focus-visible .apple-poster-play {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.live-vcard-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 2px;
+  min-width: 0;
+}
+
+.live-vcard-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.24;
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  transition: color 160ms ease;
+}
+
+.live-vcard:hover .live-vcard-title,
+.live-vcard:focus-visible .live-vcard-title {
+  color: #ffffff;
+}
+
+.live-vcard-meta {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-vcard:hover .live-vcard-frame,
+  .live-vcard:active .live-vcard-frame,
+  .live-vcard:hover .live-vcard-emblem,
+  .live-vcard:focus-visible .live-vcard-emblem {
+    transform: none !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .live-vcard-pill {
+    backdrop-filter: none !important;
+    background: #1c1c1e !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .live-vcard-frame {
+    border-color: rgba(255, 255, 255, 0.45);
+  }
+}

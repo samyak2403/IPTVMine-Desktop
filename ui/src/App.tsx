@@ -1091,37 +1091,72 @@ export function App() {
                     </div>
                   </div>
                 ) : (
-                  <div className="grid-channels">
-                    {filteredChannels.slice(0, 120).map((ch) => (
-                      <button
-                        type="button"
-                        key={`${ch.name}-${ch.streamUrl}`}
-                        className="card channel-card"
-                        onClick={() =>
-                          setActivePlayback({
-                            title: ch.name,
-                            link: ch.streamUrl,
-                            streamUrl: ch.streamUrl,
-                            headers: ch.headers,
-                            imageUrl: ch.logoUrl,
-                            isLive: true,
-                            channel: ch,
-                          })
-                        }
-                      >
-                        <div className="channel-card-row">
-                          <ChannelLogo src={ch.logoUrl} name={ch.name} size={44} />
-                          <div className="channel-card-meta">
-                            <div className="channel-card-title">{ch.name}</div>
-                            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                              <span className="badge">{ch.category}</span>
-                              <span className="muted" style={{ fontSize: 12 }}>{ch.streamType}</span>
+                  <div className="live-vcard-grid">
+                    {filteredChannels.slice(0, 120).map((ch) => {
+                      const numericRes = ch.name.match(/\b(\d{3,4}p|4k|uhd)\b/i);
+                      const fallbackTier = !numericRes ? ch.name.match(/\b(fhd|hd)\b/i) : null;
+                      const resolutionLabel = (numericRes?.[1] ?? fallbackTier?.[1] ?? "").toUpperCase();
+                      const primaryCategories = ch.category
+                        .split(/[;,]/)
+                        .map((part) => part.trim())
+                        .filter(Boolean)
+                        .slice(0, 2)
+                        .join(" · ");
+
+                      return (
+                        <button
+                          type="button"
+                          key={`${ch.name}-${ch.streamUrl}`}
+                          className="live-vcard"
+                          onClick={() =>
+                            setActivePlayback({
+                              title: ch.name,
+                              link: ch.streamUrl,
+                              streamUrl: ch.streamUrl,
+                              headers: ch.headers,
+                              imageUrl: ch.logoUrl,
+                              isLive: true,
+                              channel: ch,
+                            })
+                          }
+                        >
+                          <div className="live-vcard-frame">
+                            <div className="live-vcard-top">
+                              <span className="live-vcard-pill is-live">
+                                <span className="live-vcard-dot" aria-hidden="true" />
+                                <span>{ch.streamType || "LIVE"}</span>
+                              </span>
+                              {resolutionLabel && (
+                                <span className="live-vcard-pill">{resolutionLabel}</span>
+                              )}
                             </div>
+
+                            <div className="live-vcard-stage">
+                              <div className="live-vcard-emblem">
+                                <ChannelLogo src={ch.logoUrl} name={ch.name} size={74} />
+                              </div>
+                            </div>
+
+                            <span className="apple-poster-play" aria-hidden="true">
+                              <Play size={15} fill="currentColor" style={{ marginLeft: 1 }} />
+                            </span>
+                            <div className="apple-poster-rim" />
                           </div>
-                          <Play size={14} color="#ffc062" style={{ flexShrink: 0 }} />
-                        </div>
-                      </button>
-                    ))}
+
+                          <div className="live-vcard-caption">
+                            <h3 className="live-vcard-title" title={ch.name}>
+                              {ch.name}
+                            </h3>
+                            <span
+                              className="live-vcard-meta"
+                              title={ch.category || "Live Channel"}
+                            >
+                              {primaryCategories || "Live Channel"}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
