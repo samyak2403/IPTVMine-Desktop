@@ -22,6 +22,7 @@ import signalStreamSvg from "./assets/drawable/signal-stream.svg";
 import signalStreamActiveSvg from "./assets/drawable/signal-stream-active.svg";
 import userHeartSvg from "./assets/drawable/user-heart.svg";
 import userCircleSvg from "./assets/drawable/user-circle.svg";
+import appIconPng from "./assets/drawable/app-icon.png";
 import type {
   AppSettings,
   Channel,
@@ -725,8 +726,24 @@ export function App() {
 
   return (
     <div className="ott-shell">
-      {/* Figma Product_Nav Left Floating Gradient Icon Rail */}
+      {/* Product_Nav Left Floating Gradient Icon Rail */}
       <nav className="ott-nav-rail" aria-label="Primary Navigation">
+        <button
+          type="button"
+          className="ott-nav-brand"
+          aria-label="IPTVMine"
+          onClick={() => setRoute("home")}
+        >
+          <img
+            className="ott-nav-brand-img"
+            src={appIconPng}
+            alt="IPTVMine Logo"
+            width={44}
+            height={44}
+          />
+          <span className="ott-nav-tooltip">IPTVMine</span>
+        </button>
+
         <button
           type="button"
           className={`ott-nav-item ${route === "home" ? "active" : ""}`}
