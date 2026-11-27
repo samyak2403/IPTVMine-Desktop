@@ -4,7 +4,7 @@ import { ArrowLeft, Calendar, Clock, Download, Film, HardDrive, Play, Star } fro
 import { api } from "../api";
 import { formatOttTitle } from "../components/OttUi";
 import { extractRichCardMeta, type RichCardMeta } from "../utils/mediaBadges";
-import playCircleSvg from "../assets/figma/play-circle.svg";
+import playCircleSvg from "../assets/drawable/play-circle.svg";
 import type {
   DetailEnrichment,
   EpisodeItem,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Film, Play } from "lucide-react";
-import playCircleSvg from "../assets/figma/play-circle.svg";
+import playCircleSvg from "../assets/drawable/play-circle.svg";
 
 export const BANNER_ASPECT_THRESHOLD = 1.2;
 

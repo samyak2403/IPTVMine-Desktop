@@ -14,14 +14,14 @@ import { PreferencesView } from "./screens/PreferencesView";
 import { ProvidersView } from "./screens/ProvidersView";
 import { AboutView, BugReportView, LegalView } from "./screens/SettingsSubViews";
 import { WatchHistoryView } from "./screens/WatchHistoryView";
-import homeSvg from "./assets/figma/home.svg";
-import homeActiveSvg from "./assets/figma/home-active.svg";
-import gridSquareSvg from "./assets/figma/grid-square.svg";
-import playlistSvg from "./assets/figma/playlist.svg";
-import signalStreamSvg from "./assets/figma/signal-stream.svg";
-import signalStreamActiveSvg from "./assets/figma/signal-stream-active.svg";
-import userHeartSvg from "./assets/figma/user-heart.svg";
-import userCircleSvg from "./assets/figma/user-circle.svg";
+import homeSvg from "./assets/drawable/home.svg";
+import homeActiveSvg from "./assets/drawable/home-active.svg";
+import gridSquareSvg from "./assets/drawable/grid-square.svg";
+import playlistSvg from "./assets/drawable/playlist.svg";
+import signalStreamSvg from "./assets/drawable/signal-stream.svg";
+import signalStreamActiveSvg from "./assets/drawable/signal-stream-active.svg";
+import userHeartSvg from "./assets/drawable/user-heart.svg";
+import userCircleSvg from "./assets/drawable/user-circle.svg";
 import type {
   AppSettings,
   Channel,

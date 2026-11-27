@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { FolderOpen, Pause, Play, RotateCw, Trash2 } from "lucide-react";
 import { api } from "../api";
+import noDownloadsSvg from "../assets/illustrations/no_downloads.svg";
 import type { DownloadTask, PlaybackRequest } from "../types";
 
 interface Props {
@@ -83,7 +84,7 @@ export function DownloadsView({ onPlayLocal, onTasksChange }: Props) {
   }
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
+    <div style={{ maxWidth: 1120, margin: "0 auto", display: "grid", gap: 16 }}>
       <div className="page-header" style={{ marginBottom: 0 }}>
         <div>
           <h1 className="page-title">Downloads</h1>
@@ -94,8 +95,19 @@ export function DownloadsView({ onPlayLocal, onTasksChange }: Props) {
       {error && <div className="card error-text">{error}</div>}
 
       {tasks.length === 0 && (
-        <div className="card muted">
-          No downloads yet. Open any movie or series episode and click Download to save for offline playback.
+        <div className="hist-empty-card dl-empty-card">
+          <div className="dl-empty-art">
+            <img
+              src={noDownloadsSvg}
+              alt="No downloads illustration"
+              width={168}
+              height={168}
+            />
+          </div>
+          <div className="hist-empty-title">No Downloads Yet</div>
+          <div className="hist-empty-desc">
+            Open any movie or series episode and click Download to save for offline playback.
+          </div>
         </div>
       )}
 
