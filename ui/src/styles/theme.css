@@ -4672,3 +4672,70 @@ textarea {
     border-bottom-color: rgba(255, 255, 255, 0.25);
   }
 }
+
+.about-brand-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1 1 360px;
+}
+
+.about-brand-logo {
+  width: 60px;
+  height: 60px;
+  border-radius: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.44);
+  flex-shrink: 0;
+  object-fit: cover;
+}
+
+.about-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  transition: transform 90ms ease-out;
+}
+
+.about-nav-btn:active {
+  transform: scale(0.96);
+}
+
+.about-update-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: var(--radius-panel);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle);
+}
+
+.about-release-notes {
+  margin: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+@keyframes about-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.is-spinning {
+  animation: about-spin 900ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .about-nav-btn:active {
+    transform: none !important;
+  }
+  .is-spinning {
+    animation: none;
+  }
+}

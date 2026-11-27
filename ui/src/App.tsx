@@ -1398,7 +1398,18 @@ export function App() {
               <WatchHistoryView onResume={(req) => setActivePlayback(req)} />
             )}
 
-            {route === "about" && <AboutView onBack={() => setRoute("settings")} />}
+            {route === "about" && (
+              <AboutView
+                onBack={() => setRoute("settings")}
+                onOpenProviders={() => setRoute("providers")}
+                onOpenLiveTv={() => setRoute("television")}
+                onOpenMovies={() => {
+                  setMoviesInitialFilter(undefined);
+                  setRoute("movies");
+                }}
+                onOpenDns={() => setRoute("dns")}
+              />
+            )}
             {route === "bug-report" && <BugReportView onBack={() => setRoute("settings")} />}
             {route === "legal" && <LegalView onBack={() => setRoute("settings")} />}
 

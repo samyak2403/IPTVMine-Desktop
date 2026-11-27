@@ -1,9 +1,53 @@
-import { useEffect, useState } from "react";
-import { ArrowLeft, Check, Copy, RefreshCw } from "lucide-react";
+import { useEffect, useId, useState, type ReactNode } from "react";
+import {
+  ArrowLeft,
+  Check,
+  ChevronRight,
+  Copy,
+  Cpu,
+  Database,
+  ExternalLink,
+  Film,
+  Keyboard,
+  Radio,
+  RefreshCw,
+  ShieldCheck,
+  Sparkles,
+  Tv,
+} from "lucide-react";
 import { api } from "../api";
+import appIconPng from "../assets/drawable/app-icon.png";
 import type { UpdateCheckResult } from "../types";
 
-export function AboutView({ onBack }: { onBack: () => void }) {
+interface AboutProps {
+  onBack: () => void;
+  onOpenProviders?: () => void;
+  onOpenLiveTv?: () => void;
+  onOpenMovies?: () => void;
+  onOpenDns?: () => void;
+}
+
+interface GuideStep {
+  id: string;
+  icon: ReactNode;
+  highlight?: boolean;
+  title: string;
+  desc: string;
+  cta?: string;
+  onAction?: () => void;
+}
+
+/**
+ * Displays IPTVMine Desktop identity, step-by-step IPTV playback instructions, player shortcuts, and updates.
+ */
+export function AboutView({
+  onBack,
+  onOpenProviders,
+  onOpenLiveTv,
+  onOpenMovies,
+  onOpenDns,
+}: AboutProps) {
+  const headingId = useId();
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<UpdateCheckResult | null>(null);
   const [error, setError] = useState("");
@@ -20,57 +64,227 @@ export function AboutView({ onBack }: { onBack: () => void }) {
     }
   }
 
+  const guideSteps: GuideStep[] = [
+    {
+      id: "add-source",
+      icon: <Tv size={18} />,
+      highlight: true,
+      title: "1. Add an IPTV Playlist or Stream Source",
+      desc: "Open Providers to paste an M3U / M3U8 or IPTV JSON playlist URL, import a local .m3u / .m3u8 / .json file from disk, connect a Source repository (@handle or GitHub URL), or enter a direct stream link.",
+      cta: "Providers",
+      onAction: onOpenProviders,
+    },
+    {
+      id: "watch-live",
+      icon: <Radio size={18} />,
+      title: "2. Browse & Play Live TV Channels",
+      desc: "Go to Live TV or Live Categories to search channels by name or filter by category. Click any channel card to stream HLS, DASH, RTMP, or MPEG-TS feeds smoothly through the local proxy.",
+      cta: "Live TV",
+      onAction: onOpenLiveTv,
+    },
+    {
+      id: "watch-vod",
+      icon: <Film size={18} />,
+      title: "3. Stream Movies, Series & Save Offline",
+      desc: "Install sources inside Extensions, browse Movies & Series, choose a quality mirror or external player (VLC / mpv), or click Download for offline viewing and Watch History resume.",
+      cta: "Movies",
+      onAction: onOpenMovies,
+    },
+    {
+      id: "doh-bypass",
+      icon: <ShieldCheck size={18} />,
+      title: "4. Bypass Blocked Hosts with DoH DNS",
+      desc: "If an IPTV playlist or media host fails to resolve on ISP DNS, switch DNS-over-HTTPS in DoH DNS (Cloudflare, Google, AdGuard, or a custom resolver URL).",
+      cta: "DoH DNS",
+      onAction: onOpenDns,
+    },
+  ];
+
+  const capabilities = [
+    {
+      id: "engine",
+      icon: <Cpu size={18} />,
+      title: "Playback Engine & Formats",
+      desc: "Supports M3U / EXTM3U, IPTV JSON, HLS (.m3u8), MPEG-DASH (.mpd), MP4, MKV, AC3/DTS & RTMP remuxing via built-in FFmpeg and parallel HTTP Range caching.",
+    },
+    {
+      id: "shortcuts",
+      icon: <Keyboard size={18} />,
+      title: "Player Keyboard Controls",
+      desc: "Space / K play-pause • Left / Right (±10s) & J / L (±30s) seek • Up / Down & M volume/mute • F fullscreen • P pin window • N next episode • ? help • Esc close.",
+    },
+    {
+      id: "privacy",
+      icon: <Database size={18} />,
+      title: "Local Storage & Zero Telemetry",
+      desc: "All playlists, extensions, watch progress, download tasks, and settings live locally on your computer in SQLite with no tracking or analytics.",
+    },
+  ];
+
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <div className="page-header" style={{ marginBottom: 0 }}>
-        <h1 className="page-title">About IPTVMine Desktop</h1>
-        <button className="btn" onClick={onBack}>
-          <ArrowLeft size={14} /> Back to Settings
-        </button>
+    <section className="pref-screen" aria-labelledby={headingId}>
+      <header className="pref-header">
+        <div className="about-brand-head">
+          <img
+            className="about-brand-logo"
+            src={appIconPng}
+            alt="IPTVMine Desktop Logo"
+            width={60}
+            height={60}
+          />
+          <div className="pref-title-block">
+            <h1 id={headingId} className="pref-title">
+              About IPTVMine Desktop
+            </h1>
+            <p className="pref-subtitle">
+              Desktop IPTV, Live TV, Movie &amp; Series streaming client built with Rust, Tauri v2, and React.
+            </p>
+          </div>
+        </div>
+
+        <div className="pref-summary-pill">
+          <span
+            className={`pref-summary-dot ${result?.updateAvailable ? "is-amber" : "is-live"}`}
+            aria-hidden="true"
+          />
+          <span>
+            {result
+              ? result.updateAvailable
+                ? `Update v${result.latestVersion}`
+                : `v0.1.0 • Up to date`
+              : "v0.1.0 • Desktop"}
+          </span>
+        </div>
+      </header>
+
+      <div className="pref-section">
+        <div className="pref-section-label">How to Play IPTV &amp; Streams</div>
+        <div className="pref-group">
+          {guideSteps.map((step) => (
+            <div key={step.id} className="pref-row">
+              <div
+                className={`pref-row-icon ${step.highlight ? "is-active" : ""}`}
+                aria-hidden="true"
+              >
+                {step.icon}
+              </div>
+              <div className="pref-row-copy">
+                <div className="pref-row-head">
+                  <span className="pref-row-title">{step.title}</span>
+                </div>
+                <div className="pref-row-desc">{step.desc}</div>
+              </div>
+              {step.onAction && step.cta ? (
+                <button
+                  type="button"
+                  className="btn about-nav-btn"
+                  onClick={step.onAction}
+                >
+                  <span>{step.cta}</span>
+                  <ChevronRight size={14} aria-hidden="true" />
+                </button>
+              ) : (
+                <span aria-hidden="true" />
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div className="card" style={{ display: "grid", gap: 10 }}>
-        <div>
-          <strong>Version:</strong> 0.1.0 (Rust + Tauri v2 + React + TypeScript)
-        </div>
-        <div className="muted">
-          Desktop edition of IPTVMine Pro supporting M3U/JSON Live TV, JS/TS extension sources, DoH DNS bypass, local downloads, and watch history.
-        </div>
-        <div>
-          <button className="btn btn-primary" disabled={checking} onClick={() => void checkUpdates()}>
-            <RefreshCw size={14} /> {checking ? "Checking GitHub..." : "Check for Updates"}
-          </button>
-        </div>
-        {error && <div className="error-text">{error}</div>}
-        {result && (
-          <div className="card" style={{ background: "var(--bg-surface-elevated)", display: "grid", gap: 6 }}>
-            <div>
-              <strong>
-                {result.updateAvailable
-                  ? `Update Available: v${result.latestVersion}`
-                  : `Up to date (latest v${result.latestVersion})`}
-              </strong>
+      <div className="pref-section">
+        <div className="pref-section-label">Player Engine &amp; Controls</div>
+        <div className="pref-group">
+          {capabilities.map((cap) => (
+            <div key={cap.id} className="pref-row">
+              <div className="pref-row-icon" aria-hidden="true">
+                {cap.icon}
+              </div>
+              <div className="pref-row-copy">
+                <div className="pref-row-title">{cap.title}</div>
+                <div className="pref-row-desc">{cap.desc}</div>
+              </div>
+              <span aria-hidden="true" />
             </div>
-            {result.releaseName && <div className="muted">{result.releaseName}</div>}
-            {result.releaseNotes && (
-              <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12 }} className="muted">
-                {result.releaseNotes}
-              </pre>
-            )}
-            {result.downloadUrl && (
-              <a
-                href={result.downloadUrl}
-                target="_blank"
-                rel="noreferrer"
-                style={{ color: "var(--accent-secondary)" }}
-              >
-                Download {result.assetName || "Installer"}
-              </a>
-            )}
-          </div>
-        )}
+          ))}
+        </div>
       </div>
-    </div>
+
+      <div className="pref-section">
+        <div className="pref-section-label">Version &amp; Updates</div>
+        <div className="pref-group">
+          <div className="pref-row is-wrap">
+            <div className="pref-row-icon is-active" aria-hidden="true">
+              <Sparkles size={18} />
+            </div>
+            <div className="pref-row-copy">
+              <div className="pref-row-title">IPTVMine Desktop v0.1.0</div>
+              <div className="pref-row-desc">
+                Rust + Tauri v2 + React 18 + TypeScript • QuickJS Source Runtime
+              </div>
+            </div>
+            <div className="pref-action-buttons">
+              <button
+                type="button"
+                className="btn btn-primary about-nav-btn"
+                disabled={checking}
+                onClick={() => void checkUpdates()}
+              >
+                <RefreshCw
+                  size={14}
+                  className={checking ? "is-spinning" : ""}
+                  aria-hidden="true"
+                />
+                <span>{checking ? "Checking..." : "Check for Updates"}</span>
+              </button>
+              <button
+                type="button"
+                className="btn about-nav-btn"
+                onClick={onBack}
+              >
+                <ArrowLeft size={14} aria-hidden="true" />
+                <span>Preferences</span>
+              </button>
+            </div>
+          </div>
+
+          {(error || result) && (
+            <div className="pref-row is-actions">
+              {error && <div className="pref-feedback is-error">{error}</div>}
+              {result && (
+                <div className="about-update-card">
+                  <div className="pref-row-head">
+                    <span className="pref-row-title">
+                      {result.updateAvailable
+                        ? `Update Available: v${result.latestVersion}`
+                        : `Up to date (latest v${result.latestVersion})`}
+                    </span>
+                    {result.releaseName && (
+                      <span className="pref-row-desc">{result.releaseName}</span>
+                    )}
+                  </div>
+                  {result.releaseNotes && (
+                    <pre className="about-release-notes">{result.releaseNotes}</pre>
+                  )}
+                  {result.downloadUrl && (
+                    <div>
+                      <a
+                        className="btn btn-primary pref-ext-pill"
+                        href={result.downloadUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <ExternalLink size={14} aria-hidden="true" />
+                        <span>Download {result.assetName || "Installer"}</span>
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
