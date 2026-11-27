@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Cpu, Download, Pencil, Play, RefreshCw, Trash2, Upload } from "lucide-react";
+import { Pencil, Play, RefreshCw, Trash2, Upload } from "lucide-react";
 import { api, isTauriRuntime } from "./api";
 import { ChannelLogo } from "./components/ChannelLogo";
 import { formatOttTitle, HeroMarquee, MidBanner, OttCarousel, type OttCardItem } from "./components/OttUi";
@@ -10,6 +10,7 @@ import { ExtensionsView } from "./screens/ExtensionsView";
 import { MovieDetailView } from "./screens/MovieDetailView";
 import { MoviesView } from "./screens/MoviesView";
 import { PlayerView } from "./screens/PlayerView";
+import { PreferencesView } from "./screens/PreferencesView";
 import { AboutView, BugReportView, LegalView } from "./screens/SettingsSubViews";
 import { WatchHistoryView } from "./screens/WatchHistoryView";
 import homeSvg from "./assets/figma/home.svg";
@@ -1346,178 +1347,16 @@ export function App() {
             )}
 
             {route === "settings" && (
-              <div style={{ display: "grid", gap: 16 }}>
-                <h1 className="page-title">Preferences</h1>
-                <div className="card" style={{ display: "grid", gap: 14 }}>
-                  <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-                    <span>Pure AMOLED Black Canvas</span>
-                    <input
-                      type="checkbox"
-                      className="apple-switch"
-                      checked={settings.blackTheme}
-                      onChange={(e) => void updateSettings({ blackTheme: e.target.checked })}
-                    />
-                  </label>
-                  <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-                    <span>Developer Test Mode (allow LAN Vega servers)</span>
-                    <input
-                      type="checkbox"
-                      className="apple-switch"
-                      checked={settings.developerTestMode}
-                      onChange={(e) => void updateSettings({ developerTestMode: e.target.checked })}
-                    />
-                  </label>
-                  <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-                    <span>Startup Tab</span>
-                    <select
-                      className="input"
-                      style={{ maxWidth: 200 }}
-                      value={settings.startupTab}
-                      onChange={(e) =>
-                        void updateSettings({
-                          startupTab: e.target.value as AppSettings["startupTab"],
-                        })
-                      }
-                    >
-                      <option value="home">Home</option>
-                      <option value="television">Live TV</option>
-                      <option value="movies">Movies</option>
-                      <option value="category">Categories</option>
-                    </select>
-                  </label>
-                </div>
-
-                <div className="card" style={{ display: "grid", gap: 10 }}>
-                  <div style={{ fontWeight: 600 }}>External Player Executable (Optional)</div>
-                  <input
-                    className="input"
-                    placeholder="Auto-detect VLC / mpv, or paste custom path"
-                    value={settings.externalPlayerPath}
-                    onChange={(e) => void updateSettings({ externalPlayerPath: e.target.value })}
-                  />
-                  <div style={{ fontWeight: 600, marginTop: 6 }}>Download Directory (Optional)</div>
-                  <input
-                    className="input"
-                    placeholder="Default: Videos/IPTVMine Pro"
-                    value={settings.downloadDir}
-                    onChange={(e) => void updateSettings({ downloadDir: e.target.value })}
-                  />
-                </div>
-
-                <div className="card" style={{ display: "grid", gap: 12 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                    <div>
-                      <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <Cpu size={16} color="#ffc062" /> FFmpeg Media Engine
-                        {!settings.ffmpegEnabled ? (
-                          <span className="ott-meta-pill">Disabled</span>
-                        ) : installingFfmpeg || ffmpegStatus?.installing ? (
-                          <span className="ott-meta-pill amber">Auto-Installing Latest...</span>
-                        ) : ffmpegStatus?.installed ? (
-                          <span className="ott-meta-pill amber">
-                            Ready {ffmpegStatus.shortVersion ? `v${ffmpegStatus.shortVersion}` : ""} • {ffmpegStatus.source}
-                          </span>
-                        ) : (
-                          <span className="ott-meta-pill">Auto-Install Pending</span>
-                        )}
-                        {ffmpegStatus?.upstreamVersion && (
-                          <a
-                            href={ffmpegStatus.upstreamUrl || "https://github.com/FFmpeg/FFmpeg"}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="ott-meta-pill"
-                            style={{ textDecoration: "none" }}
-                          >
-                            Upstream FFmpeg/FFmpeg {ffmpegStatus.upstreamTag || `v${ffmpegStatus.upstreamVersion}`}
-                          </a>
-                        )}
-                        {ffmpegStatus?.updateAvailable && ffmpegStatus.upstreamVersion && (
-                          <span className="ott-meta-pill amber">
-                            Update v{ffmpegStatus.upstreamVersion}
-                          </span>
-                        )}
-                      </div>
-                      <div className="muted" style={{ marginTop: 4 }}>
-                        {!settings.ffmpegEnabled
-                          ? "FFmpeg auto-remuxing, multi-audio probing, subtitles & HLS downloads are paused."
-                          : installingFfmpeg || ffmpegStatus?.installing
-                            ? "Automatically downloading and configuring latest FFmpeg/FFmpeg in the background — no manual install needed."
-                            : ffmpegStatus?.installed
-                              ? ffmpegStatus.version || ffmpegStatus.ffmpegPath
-                              : "Auto-installs on startup and enables MKV/AC3/DTS/RTMP remuxing, multi-audio & subtitles, and HLS downloads via github.com/FFmpeg/FFmpeg."}
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span className="muted" style={{ fontSize: 12 }}>Default On</span>
-                      <input
-                        type="checkbox"
-                        aria-label="Enable FFmpeg Media Engine by default"
-                        className="apple-switch"
-                        checked={settings.ffmpegEnabled}
-                        onChange={(e) => void updateSettings({ ffmpegEnabled: e.target.checked })}
-                      />
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={installingFfmpeg || ffmpegStatus?.installing}
-                      onClick={() => void api.checkFfmpegUpstreamStatus().then(setFfmpegStatus)}
-                    >
-                      <RefreshCw size={14} /> Check FFmpeg/FFmpeg
-                    </button>
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={installingFfmpeg || ffmpegStatus?.installing}
-                      onClick={async () => {
-                        setInstallingFfmpeg(true);
-                        setFfmpegError("");
-                        try {
-                          setFfmpegStatus(await api.installFfmpegRuntime());
-                        } catch (err) {
-                          setFfmpegError(String(err));
-                        } finally {
-                          setInstallingFfmpeg(false);
-                        }
-                      }}
-                    >
-                      <Download size={14} />{" "}
-                      {installingFfmpeg || ffmpegStatus?.installing
-                        ? "Installing Latest..."
-                        : ffmpegStatus?.installed
-                          ? ffmpegStatus.updateAvailable && ffmpegStatus.upstreamVersion
-                            ? `Update to v${ffmpegStatus.upstreamVersion}`
-                            : "Reinstall / Verify Latest"
-                          : `Install Latest${ffmpegStatus?.upstreamVersion ? ` (v${ffmpegStatus.upstreamVersion})` : ""}`}
-                    </button>
-                  </div>
-                  {ffmpegError && <div className="error-text">{ffmpegError}</div>}
-                  <div style={{ fontWeight: 600, marginTop: 2 }}>Custom FFmpeg Path (Optional)</div>
-                  <input
-                    className="input"
-                    placeholder="Auto-installed by default, or paste custom ffmpeg.exe path / bin dir"
-                    value={settings.ffmpegPath}
-                    onChange={async (e) => {
-                      await updateSettings({ ffmpegPath: e.target.value });
-                      void api.checkFfmpegUpstreamStatus().then(setFfmpegStatus).catch(() => {
-                        void api.getFfmpegStatus().then(setFfmpegStatus).catch(() => {});
-                      });
-                    }}
-                  />
-                </div>
-
-                <div className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>VOD & Extension Cache</div>
-                    <div className="muted">Clear cached manifests, categories, and movie lists</div>
-                  </div>
-                  <button type="button" className="btn" onClick={() => void api.clearVodCache()}>
-                    Clear VOD Cache
-                  </button>
-                </div>
-              </div>
+              <PreferencesView
+                settings={settings}
+                ffmpegStatus={ffmpegStatus}
+                installingFfmpeg={installingFfmpeg}
+                ffmpegError={ffmpegError}
+                onUpdateSettings={updateSettings}
+                onFfmpegStatusChange={setFfmpegStatus}
+                onInstallingChange={setInstallingFfmpeg}
+                onFfmpegErrorChange={setFfmpegError}
+              />
             )}
 
             {route === "downloads" && (
