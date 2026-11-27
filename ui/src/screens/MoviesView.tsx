@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, RefreshCw } from "lucide-react";
 import { api } from "../api";
-import { PosterCard } from "../components/OttUi";
+import { PosterCard, useAdaptiveCardLayout } from "../components/OttUi";
 import type { VegaCatalog, VegaPost, VegaProvider } from "../types";
 
 function postKey(post: VegaPost): string {
@@ -54,6 +54,12 @@ export function MoviesView({ initialFilter, onSelectPost, onOpenExtensions }: Pr
   const requestSeqRef = useRef(0);
   const loadMoreInFlightRef = useRef(false);
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
+
+  const explicitRatios = useMemo(() => posts.map((p) => p.aspectRatio), [posts]);
+  const { layout: gridLayout, recordMeasure: recordGridMeasure } = useAdaptiveCardLayout(
+    `${selectedScraper}|${selectedFilter}|${isSearching ? committedQuery : ""}`,
+    explicitRatios
+  );
 
   useEffect(() => {
     async function init() {
@@ -330,19 +336,26 @@ export function MoviesView({ initialFilter, onSelectPost, onOpenExtensions }: Pr
       )}
 
       {loading && posts.length === 0 ? (
-        <div className="grid-posters">
+        <div className={`grid-posters${gridLayout === "banner" ? " is-banner-grid" : ""}`}>
           {Array.from({ length: 12 }).map((_, i) => (
-            <div key={i} className="shimmer" style={{ aspectRatio: "2 / 3", borderRadius: 14 }} />
+            <div
+              key={i}
+              className="shimmer"
+              style={{ aspectRatio: gridLayout === "banner" ? "16 / 9" : "2 / 3", borderRadius: 14 }}
+            />
           ))}
         </div>
       ) : (
-        <div className="grid-posters">
+        <div className={`grid-posters${gridLayout === "banner" ? " is-banner-grid" : ""}`}>
           {posts.map((post) => (
             <PosterCard
               key={postKey(post)}
+              measureId={postKey(post)}
               className="poster-card"
               title={post.title}
               image={post.image}
+              layout={gridLayout}
+              onMeasureAspect={recordGridMeasure}
               onClick={() => onSelectPost(post, selectedScraper)}
             />
           ))}

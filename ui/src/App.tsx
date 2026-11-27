@@ -449,6 +449,7 @@ export function App() {
         id: `${sec.filter}-${post.link}-${post.title}`,
         title: formatOttTitle(post.title),
         image: post.image,
+        aspectRatio: post.aspectRatio ?? undefined,
         onClick: () => {
           setSelectedVod({ post, scraperValue: homeFeed.scraperValue });
           setRoute("movie-detail");

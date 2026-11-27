@@ -129,6 +129,7 @@ export interface VegaPost {
   title: string;
   link: string;
   image: string;
+  aspectRatio?: number | null;
 }
 
 export interface VegaDirectLink {

@@ -1,6 +1,57 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Film, Play } from "lucide-react";
 import playCircleSvg from "../assets/figma/play-circle.svg";
+
+export const BANNER_ASPECT_THRESHOLD = 1.2;
+
+export function isBannerAspectRatio(ratio?: number | null): boolean {
+  return typeof ratio === "number" && Number.isFinite(ratio) && ratio >= BANNER_ASPECT_THRESHOLD;
+}
+
+export function resolveLayoutMode(
+  explicitRatios: Array<number | null | undefined>,
+  votes: { banner: number; poster: number }
+): "banner" | "poster" {
+  if (explicitRatios.some((r) => isBannerAspectRatio(r))) {
+    return "banner";
+  }
+  if (votes.banner > votes.poster) {
+    return "banner";
+  }
+  return "poster";
+}
+
+export function useAdaptiveCardLayout(
+  resetKey: string,
+  explicitRatios: Array<number | null | undefined>
+) {
+  const votesMapRef = useRef<Map<string, "banner" | "poster">>(new Map());
+  const [votes, setVotes] = useState({ banner: 0, poster: 0 });
+
+  useEffect(() => {
+    votesMapRef.current.clear();
+    setVotes({ banner: 0, poster: 0 });
+  }, [resetKey]);
+
+  const recordMeasure = useCallback((id: string, aspectRatio: number) => {
+    if (!Number.isFinite(aspectRatio) || aspectRatio <= 0) return;
+    const kind: "banner" | "poster" =
+      aspectRatio >= BANNER_ASPECT_THRESHOLD ? "banner" : "poster";
+    const map = votesMapRef.current;
+    if (map.get(id) === kind) return;
+    map.set(id, kind);
+    let banner = 0;
+    let poster = 0;
+    for (const v of map.values()) {
+      if (v === "banner") banner += 1;
+      else poster += 1;
+    }
+    setVotes({ banner, poster });
+  }, []);
+
+  const layout = resolveLayoutMode(explicitRatios, votes);
+  return { layout, recordMeasure };
+}
 
 export function formatOttTitle(raw: string): string {
   const cleaned = raw
@@ -28,17 +79,25 @@ export function splitPosterCaption(raw: string, explicitSubtitle?: string): {
 }
 
 export interface PosterCardProps {
+  measureId?: string;
   title: string;
   subtitle?: string;
+  badge?: string;
   image?: string;
+  layout?: "poster" | "banner";
+  onMeasureAspect?: (id: string, aspectRatio: number) => void;
   className?: string;
   onClick: () => void;
 }
 
 export function PosterCard({
+  measureId,
   title,
   subtitle,
+  badge,
   image,
+  layout = "poster",
+  onMeasureAspect,
   className = "poster-card",
   onClick,
 }: PosterCardProps) {
@@ -46,16 +105,28 @@ export function PosterCard({
   const [imgFailed, setImgFailed] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
   const caption = splitPosterCaption(title, subtitle);
+  const keyForMeasure = measureId ?? image ?? title;
 
   useEffect(() => {
     setImgFailed(false);
     const el = imgRef.current;
-    setImgLoaded(Boolean(el && el.complete && el.naturalWidth > 0));
-  }, [image]);
+    if (el && el.complete && el.naturalWidth > 0) {
+      setImgLoaded(true);
+      if (el.naturalHeight > 0) {
+        onMeasureAspect?.(keyForMeasure, el.naturalWidth / el.naturalHeight);
+      }
+    } else {
+      setImgLoaded(false);
+    }
+  }, [image, keyForMeasure, onMeasureAspect]);
+
+  const cornerTag = badge || (layout === "banner" ? caption.meta : undefined);
+  const frameClass = `apple-poster-frame${layout === "banner" ? " is-banner" : ""}`;
+  const btnClass = `${className}${layout === "banner" ? " is-banner" : ""}`;
 
   return (
-    <button type="button" className={className} onClick={onClick}>
-      <div className="apple-poster-frame">
+    <button type="button" className={btnClass} onClick={onClick}>
+      <div className={frameClass}>
         {image && !imgFailed ? (
           <img
             ref={imgRef}
@@ -66,7 +137,13 @@ export function PosterCard({
             decoding="async"
             referrerPolicy="no-referrer"
             draggable={false}
-            onLoad={() => setImgLoaded(true)}
+            onLoad={(e) => {
+              setImgLoaded(true);
+              const img = e.currentTarget;
+              if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                onMeasureAspect?.(keyForMeasure, img.naturalWidth / img.naturalHeight);
+              }
+            }}
             onError={() => setImgFailed(true)}
           />
         ) : (
@@ -75,6 +152,7 @@ export function PosterCard({
           </div>
         )}
         <div className="apple-poster-rim" aria-hidden="true" />
+        {cornerTag && <span className="apple-poster-badge">{cornerTag}</span>}
         <span className="apple-poster-play" aria-hidden="true">
           <Play size={14} fill="currentColor" style={{ marginLeft: 1 }} />
         </span>
@@ -83,7 +161,9 @@ export function PosterCard({
         <h3 className={className.includes("ott-tall-card") ? "ott-tall-title" : "poster-title"}>
           {caption.title}
         </h3>
-        {caption.meta && <div className="apple-poster-meta">{caption.meta}</div>}
+        {caption.meta && caption.meta !== cornerTag && (
+          <div className="apple-poster-meta">{caption.meta}</div>
+        )}
       </div>
     </button>
   );
@@ -94,6 +174,7 @@ export interface OttCardItem {
   title: string;
   subtitle?: string;
   image?: string;
+  aspectRatio?: number;
   progressPct?: number;
   badge?: string;
   onClick: () => void;
@@ -267,6 +348,15 @@ export function OttCarousel({ title, variant, items, headerAction }: CarouselPro
     rafId: 0,
   });
 
+  const explicitRatios = useMemo(
+    () => (variant === "tall" ? items.map((item) => item.aspectRatio) : []),
+    [items, variant]
+  );
+  const { layout: adaptiveLayout, recordMeasure } = useAdaptiveCardLayout(
+    `${title}|${items[0]?.id ?? ""}`,
+    explicitRatios
+  );
+
   if (items.length === 0) return null;
 
   function stopMomentum() {
@@ -407,10 +497,14 @@ export function OttCarousel({ title, variant, items, headerAction }: CarouselPro
           variant === "tall" ? (
             <PosterCard
               key={item.id}
+              measureId={item.id}
               className={cardClass}
               title={item.title}
               subtitle={item.subtitle}
+              badge={item.badge}
               image={item.image}
+              layout={adaptiveLayout}
+              onMeasureAspect={recordMeasure}
               onClick={() => {
                 if (!dragState.current.moved) item.onClick();
               }}

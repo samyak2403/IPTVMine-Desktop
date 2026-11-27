@@ -730,6 +730,7 @@ mod tests {
                 title: format!("Post {i}"),
                 link: format!("https://example.com/{i}"),
                 image: String::new(),
+                aspect_ratio: None,
             })
             .collect();
         store

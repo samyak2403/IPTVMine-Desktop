@@ -89,12 +89,45 @@ pub struct VegaCatalog {
     pub filter: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+fn deserialize_optional_aspect_ratio<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<serde_json::Value>::deserialize(deserializer)?;
+    let Some(val) = opt else {
+        return Ok(None);
+    };
+    let parsed = match val {
+        serde_json::Value::Number(n) => n.as_f64(),
+        serde_json::Value::String(s) => {
+            let trimmed = s.trim();
+            if let Some((w, h)) = trimmed.split_once(':').or_else(|| trimmed.split_once('/')) {
+                match (w.trim().parse::<f64>(), h.trim().parse::<f64>()) {
+                    (Ok(wf), Ok(hf)) if hf > 0.0 => Some(wf / hf),
+                    _ => None,
+                }
+            } else {
+                trimmed.parse::<f64>().ok()
+            }
+        }
+        _ => None,
+    };
+    Ok(parsed.filter(|r| r.is_finite() && *r > 0.0))
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VegaPost {
     pub title: String,
     pub link: String,
     #[serde(default)]
     pub image: String,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_aspect_ratio"
+    )]
+    pub aspect_ratio: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -560,5 +593,22 @@ mod tests {
         assert_eq!(parsed.startup_tab, StartupTab::Movies);
         assert!(parsed.ffmpeg_enabled);
         assert!(parsed.ffmpeg_path.is_empty());
+    }
+
+    #[test]
+    fn vega_post_deserializes_numeric_and_string_aspect_ratio() {
+        let posts: Vec<VegaPost> = serde_json::from_str(
+            r#"[
+                {"title":"Poster","link":"/1","image":"a.jpg"},
+                {"title":"NumBanner","link":"/2","image":"b.jpg","aspectRatio":1.7777},
+                {"title":"RatioBanner","link":"/3","image":"c.jpg","aspectRatio":"16:9"},
+                {"title":"SlashBanner","link":"/4","image":"d.jpg","aspectRatio":"16/9"}
+            ]"#,
+        )
+        .unwrap();
+        assert_eq!(posts[0].aspect_ratio, None);
+        assert!(posts[1].aspect_ratio.unwrap() > 1.7);
+        assert!((posts[2].aspect_ratio.unwrap() - (16.0 / 9.0)).abs() < 0.001);
+        assert!((posts[3].aspect_ratio.unwrap() - (16.0 / 9.0)).abs() < 0.001);
     }
 }

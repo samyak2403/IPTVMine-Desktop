@@ -625,6 +625,10 @@ textarea {
   outline: none;
 }
 
+.ott-tall-card.is-banner {
+  flex: 0 0 clamp(256px, 23vw, 340px);
+}
+
 /* ── Apple TV+ Crafted Poster Card (Home & Movies Grid) ───────────────────── */
 
 .apple-poster-frame {
@@ -641,6 +645,29 @@ textarea {
     border-color 180ms ease,
     box-shadow 260ms var(--ease-spring);
   transform-origin: center center;
+}
+
+.apple-poster-frame.is-banner {
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+}
+
+.apple-poster-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(12, 12, 16, 0.78);
+  backdrop-filter: blur(12px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.015em;
+  pointer-events: none;
 }
 
 .ott-tall-card:hover .apple-poster-frame,
@@ -1025,6 +1052,10 @@ textarea {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
   gap: 24px 18px;
+}
+
+.grid-posters.is-banner-grid {
+  grid-template-columns: repeat(auto-fill, minmax(252px, 1fr));
 }
 
 .poster-card {
@@ -2647,6 +2678,7 @@ textarea {
   .ott-status-pill,
   .ott-glass-pill,
   .apple-poster-play,
+  .apple-poster-badge,
   .player-hud-top,
   .player-hud-bottom,
   .player-popover,
