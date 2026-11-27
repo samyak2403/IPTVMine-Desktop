@@ -1,8 +1,30 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Search, RefreshCw } from "lucide-react";
 import { api } from "../api";
 import { formatOttTitle } from "../components/OttUi";
 import type { VegaCatalog, VegaPost, VegaProvider } from "../types";
+
+function postKey(post: VegaPost): string {
+  return post.link.trim() || post.title.trim();
+}
+
+function mergeUniquePosts(existing: VegaPost[], incoming: VegaPost[]): {
+  merged: VegaPost[];
+  addedCount: number;
+} {
+  const seen = new Set(existing.map(postKey));
+  const added: VegaPost[] = [];
+  for (const item of incoming) {
+    const k = postKey(item);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    added.push(item);
+  }
+  return {
+    merged: existing.length === 0 ? added : [...existing, ...added],
+    addedCount: added.length,
+  };
+}
 
 interface Props {
   initialFilter?: string;
@@ -19,9 +41,19 @@ export function MoviesView({ initialFilter, onSelectPost, onOpenExtensions }: Pr
   const [posts, setPosts] = useState<VegaPost[]>([]);
   const [page, setPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
+  const [committedQuery, setCommittedQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState("");
+  const [loadMoreError, setLoadMoreError] = useState("");
+
+  const postsRef = useRef<VegaPost[]>([]);
+  postsRef.current = posts;
+  const requestSeqRef = useRef(0);
+  const loadMoreInFlightRef = useRef(false);
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function init() {
@@ -47,12 +79,21 @@ export function MoviesView({ initialFilter, onSelectPost, onOpenExtensions }: Pr
   useEffect(() => {
     if (!selectedScraper) return;
     async function loadCatalog() {
+      const seq = ++requestSeqRef.current;
+      loadMoreInFlightRef.current = false;
       setLoading(true);
+      setLoadingMore(false);
       setError("");
+      setLoadMoreError("");
       setIsSearching(false);
       setSearchQuery("");
+      setCommittedQuery("");
+      postsRef.current = [];
+      setPosts([]);
+      setHasMore(true);
       try {
         const res = await api.getVodCatalog(selectedScraper);
+        if (seq !== requestSeqRef.current) return;
         setCatalog(res.catalog);
         setGenres(res.genres ?? []);
         const validInitial =
@@ -64,66 +105,145 @@ export function MoviesView({ initialFilter, onSelectPost, onOpenExtensions }: Pr
         setSelectedFilter(firstFilter);
         setPage(1);
         const initialPosts = await api.getVodPosts(selectedScraper, firstFilter, 1);
-        setPosts(initialPosts);
+        if (seq !== requestSeqRef.current) return;
+        const { merged } = mergeUniquePosts([], initialPosts);
+        postsRef.current = merged;
+        setPosts(merged);
+        setHasMore(merged.length > 0);
       } catch (err) {
+        if (seq !== requestSeqRef.current) return;
         setError(String(err));
+        postsRef.current = [];
         setPosts([]);
+        setHasMore(false);
       } finally {
-        setLoading(false);
+        if (seq === requestSeqRef.current) {
+          setLoading(false);
+        }
       }
     }
     void loadCatalog();
-  }, [selectedScraper]);
+  }, [selectedScraper, initialFilter]);
 
   async function selectCategory(filter: string) {
+    const seq = ++requestSeqRef.current;
+    loadMoreInFlightRef.current = false;
     setSelectedFilter(filter);
     setIsSearching(false);
+    setCommittedQuery("");
     setPage(1);
+    postsRef.current = [];
+    setPosts([]);
     setLoading(true);
+    setLoadingMore(false);
     setError("");
+    setLoadMoreError("");
+    setHasMore(true);
     try {
-      setPosts(await api.getVodPosts(selectedScraper, filter, 1));
+      const initialPosts = await api.getVodPosts(selectedScraper, filter, 1);
+      if (seq !== requestSeqRef.current) return;
+      const { merged } = mergeUniquePosts([], initialPosts);
+      postsRef.current = merged;
+      setPosts(merged);
+      setHasMore(merged.length > 0);
     } catch (err) {
+      if (seq !== requestSeqRef.current) return;
       setError(String(err));
+      setHasMore(false);
     } finally {
-      setLoading(false);
+      if (seq === requestSeqRef.current) {
+        setLoading(false);
+      }
     }
   }
 
   async function runSearch(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedScraper || !searchQuery.trim()) return;
+    const query = searchQuery.trim();
+    if (!selectedScraper || !query) return;
+    const seq = ++requestSeqRef.current;
+    loadMoreInFlightRef.current = false;
     setIsSearching(true);
+    setCommittedQuery(query);
     setPage(1);
+    postsRef.current = [];
+    setPosts([]);
     setLoading(true);
+    setLoadingMore(false);
     setError("");
+    setLoadMoreError("");
+    setHasMore(true);
     try {
-      setPosts(await api.searchVodPosts(selectedScraper, searchQuery.trim(), 1));
+      const initialPosts = await api.searchVodPosts(selectedScraper, query, 1);
+      if (seq !== requestSeqRef.current) return;
+      const { merged } = mergeUniquePosts([], initialPosts);
+      postsRef.current = merged;
+      setPosts(merged);
+      setHasMore(merged.length > 0);
     } catch (err) {
+      if (seq !== requestSeqRef.current) return;
       setError(String(err));
+      setHasMore(false);
     } finally {
-      setLoading(false);
+      if (seq === requestSeqRef.current) {
+        setLoading(false);
+      }
     }
   }
 
-  async function loadMore() {
-    if (!selectedScraper || loading) return;
+  const loadMore = useCallback(async () => {
+    if (!selectedScraper || loading || loadMoreInFlightRef.current || !hasMore) return;
+    const seq = requestSeqRef.current;
     const nextPage = page + 1;
-    setLoading(true);
+    const activeScraper = selectedScraper;
+    const activeFilter = selectedFilter;
+    const activeQuery = committedQuery;
+    const searching = isSearching;
+
+    loadMoreInFlightRef.current = true;
+    setLoadingMore(true);
+    setLoadMoreError("");
     try {
-      const more = isSearching
-        ? await api.searchVodPosts(selectedScraper, searchQuery.trim(), nextPage)
-        : await api.getVodPosts(selectedScraper, selectedFilter, nextPage);
-      if (more.length > 0) {
-        setPosts((prev) => [...prev, ...more]);
+      const more = searching
+        ? await api.searchVodPosts(activeScraper, activeQuery, nextPage)
+        : await api.getVodPosts(activeScraper, activeFilter, nextPage);
+      if (seq !== requestSeqRef.current) return;
+      const { merged, addedCount } = mergeUniquePosts(postsRef.current, more);
+      if (addedCount > 0) {
+        postsRef.current = merged;
+        setPosts(merged);
         setPage(nextPage);
+      } else {
+        setHasMore(false);
       }
     } catch (err) {
-      setError(String(err));
+      if (seq !== requestSeqRef.current) return;
+      setLoadMoreError(String(err));
     } finally {
-      setLoading(false);
+      if (seq === requestSeqRef.current) {
+        loadMoreInFlightRef.current = false;
+        setLoadingMore(false);
+      }
     }
-  }
+  }, [selectedScraper, loading, hasMore, page, selectedFilter, searchQuery, isSearching]);
+
+  useEffect(() => {
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel || !hasMore || loading || loadingMore || loadMoreError || posts.length === 0) {
+      return;
+    }
+    const root = sentinel.closest(".ott-main");
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          void loadMore();
+        }
+      },
+      { root, rootMargin: "360px 0px" }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loading, loadingMore, loadMoreError, posts.length, loadMore]);
 
   if (extensions.length === 0 && !loading) {
     return (
@@ -220,7 +340,7 @@ export function MoviesView({ initialFilter, onSelectPost, onOpenExtensions }: Pr
           {posts.map((post) => (
             <button
               type="button"
-              key={`${post.link}-${post.title}`}
+              key={postKey(post)}
               className="poster-card"
               onClick={() => onSelectPost(post, selectedScraper)}
             >
@@ -236,10 +356,43 @@ export function MoviesView({ initialFilter, onSelectPost, onOpenExtensions }: Pr
       )}
 
       {posts.length > 0 && (
-        <div style={{ marginTop: 24, display: "flex", justifyContent: "center" }}>
-          <button type="button" className="btn" onClick={() => void loadMore()} disabled={loading}>
-            {loading ? "Loading..." : "Load More"}
-          </button>
+        <div
+          ref={loadMoreSentinelRef}
+          style={{
+            marginTop: 24,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          {loadMoreError && (
+            <div className="muted" style={{ fontSize: 13 }}>
+              Failed to load more: {loadMoreError}
+            </div>
+          )}
+          {hasMore ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void loadMore()}
+              disabled={loading || loadingMore}
+            >
+              {loadingMore ? (
+                <>
+                  <RefreshCw size={14} className="ott-spin" /> Loading more...
+                </>
+              ) : loadMoreError ? (
+                "Retry Load More"
+              ) : (
+                "Load More"
+              )}
+            </button>
+          ) : (
+            <div className="muted" style={{ fontSize: 13 }}>
+              All {posts.length} titles loaded
+            </div>
+          )}
         </div>
       )}
     </div>
