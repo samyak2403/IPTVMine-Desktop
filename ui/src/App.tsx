@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Pencil, Play, RefreshCw, Trash2, Upload } from "lucide-react";
+import { Play, RefreshCw } from "lucide-react";
 import { api, isTauriRuntime } from "./api";
 import { ChannelLogo } from "./components/ChannelLogo";
 import { formatOttTitle, HeroMarquee, MidBanner, OttCarousel, type OttCardItem } from "./components/OttUi";
@@ -11,6 +11,7 @@ import { MovieDetailView } from "./screens/MovieDetailView";
 import { MoviesView } from "./screens/MoviesView";
 import { PlayerView } from "./screens/PlayerView";
 import { PreferencesView } from "./screens/PreferencesView";
+import { ProvidersView } from "./screens/ProvidersView";
 import { AboutView, BugReportView, LegalView } from "./screens/SettingsSubViews";
 import { WatchHistoryView } from "./screens/WatchHistoryView";
 import homeSvg from "./assets/figma/home.svg";
@@ -1191,159 +1192,52 @@ export function App() {
             )}
 
             {route === "providers" && (
-              <div style={{ display: "grid", gap: 20 }}>
-                <div className="page-header" style={{ marginBottom: 0 }}>
-                  <h1 className="page-title">Providers</h1>
-                </div>
-
-                <form className="card" onSubmit={handleAddProvider} style={{ display: "grid", gap: 12 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-                    <strong>{editingUrl ? "Edit Provider" : "Add Provider"}</strong>
-                    <select
-                      className="input"
-                      style={{ width: 140, padding: "7px 10px" }}
-                      value={detectedType}
-                      onChange={(e) => {
-                        setDetectedType(e.target.value as ProviderType);
-                        setManualTypeOverride(true);
-                      }}
-                    >
-                      <option value="IPTV">IPTV</option>
-                      <option value="VEGA">VEGA</option>
-                      <option value="VIDEO">VIDEO</option>
-                    </select>
-                  </div>
-                  <input
-                    className="input"
-                    placeholder="Title (optional)"
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                  />
-                  <input
-                    className="input"
-                    placeholder="Playlist / Manifest / @owner/repo / Video URL"
-                    value={newUrl}
-                    onChange={(e) => void handleUrlChange(e.target.value)}
-                  />
-                  <input
-                    className="input"
-                    placeholder="Custom User-Agent (optional)"
-                    value={newUa}
-                    onChange={(e) => setNewUa(e.target.value)}
-                  />
-                  {inspectInfo && <div className="muted">{inspectInfo}</div>}
-                  {providerSuccess && (
-                    <div style={{ color: "var(--status-live)", fontSize: 13 }}>{providerSuccess}</div>
-                  )}
-                  {providerError && <div className="error-text">{providerError}</div>}
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={savingProvider}
-                      onClick={() => void handleInspect()}
-                    >
-                      Inspect URL
-                    </button>
-                    <label className="btn" style={{ cursor: "pointer" }}>
-                      <Upload size={14} /> Import .m3u / .json
-                      <input
-                        type="file"
-                        accept=".m3u,.m3u8,.json,.txt"
-                        style={{ display: "none" }}
-                        onChange={(e) => void handleImportLocalFile(e)}
-                      />
-                    </label>
-                    {editingUrl && (
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() => {
-                          setEditingUrl(null);
-                          setNewTitle("");
-                          setNewUrl("");
-                          setNewUa("");
-                          setManualTypeOverride(false);
-                        }}
-                      >
-                        Cancel Edit
-                      </button>
-                    )}
-                    <button
-                      type="submit"
-                      className="btn btn-primary"
-                      disabled={savingProvider}
-                    >
-                      {savingProvider ? "Saving..." : editingUrl ? "Update Provider" : "Save Provider"}
-                    </button>
-                  </div>
-                </form>
-
-                <div style={{ display: "grid", gap: 10 }}>
-                  {providers.map((p) => (
-                    <div
-                      key={p.url}
-                      className="card"
-                      style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}
-                    >
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: 600 }}>
-                          {p.title} <span className="badge">{p.type}</span>
-                          {p.type === "IPTV" && (
-                            <span className="muted" style={{ marginLeft: 8 }}>
-                              {p.channelCount} channels
-                            </span>
-                          )}
-                        </div>
-                        <div className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {p.url}
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        {p.type === "VIDEO" && (
-                          <button
-                            type="button"
-                            className="btn btn-primary"
-                            onClick={() =>
-                              setActivePlayback({
-                                title: p.title,
-                                link: p.url,
-                                streamUrl: p.url,
-                                headers: p.userAgent ? { "User-Agent": p.userAgent } : undefined,
-                              })
-                            }
-                          >
-                            <Play size={14} /> Play
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="btn"
-                          title="Edit"
-                          onClick={() => {
-                            setEditingUrl(p.url);
-                            setNewTitle(p.title);
-                            setNewUrl(p.url);
-                            setNewUa(p.userAgent ?? "");
-                            setDetectedType(p.type);
-                            setManualTypeOverride(true);
-                            setProviderError("");
-                            setProviderSuccess("");
-                          }}
-                        >
-                          <Pencil size={14} />
-                        </button>
-                        <button type="button" className="btn" onClick={() => void handleToggleProvider(p)}>
-                          {p.isActive ? "Active" : "Paused"}
-                        </button>
-                        <button type="button" className="btn" onClick={() => void handleRemoveProvider(p.url)}>
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <ProvidersView
+                providers={providers}
+                editingUrl={editingUrl}
+                newTitle={newTitle}
+                newUrl={newUrl}
+                newUa={newUa}
+                detectedType={detectedType}
+                manualTypeOverride={manualTypeOverride}
+                inspectInfo={inspectInfo}
+                savingProvider={savingProvider}
+                providerError={providerError}
+                providerSuccess={providerSuccess}
+                onUrlChange={(val) => void handleUrlChange(val)}
+                onTitleChange={setNewTitle}
+                onUaChange={setNewUa}
+                onTypeSelect={(type) => {
+                  setDetectedType(type);
+                  setManualTypeOverride(true);
+                }}
+                onInspect={() => void handleInspect()}
+                onSubmit={(e) => void handleAddProvider(e)}
+                onImportLocalFile={(e) => void handleImportLocalFile(e)}
+                onCancelEdit={() => {
+                  setEditingUrl(null);
+                  setNewTitle("");
+                  setNewUrl("");
+                  setNewUa("");
+                  setInspectInfo("");
+                  setProviderError("");
+                  setManualTypeOverride(false);
+                }}
+                onEditProvider={(p) => {
+                  setEditingUrl(p.url);
+                  setNewTitle(p.title);
+                  setNewUrl(p.url);
+                  setNewUa(p.userAgent ?? "");
+                  setDetectedType(p.type);
+                  setManualTypeOverride(true);
+                  setInspectInfo("");
+                  setProviderError("");
+                  setProviderSuccess("");
+                }}
+                onToggleProvider={(p) => void handleToggleProvider(p)}
+                onRemoveProvider={(url) => void handleRemoveProvider(url)}
+                onPlayVideo={(req) => setActivePlayback(req)}
+              />
             )}
 
             {route === "settings" && (
