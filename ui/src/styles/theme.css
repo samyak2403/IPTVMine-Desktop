@@ -1156,7 +1156,9 @@ textarea {
 /* ── Apple-Crafted Extensions Catalog & Source Bar ─────────────────────────── */
 
 .ott-ext-shell {
+  width: 100%;
   max-width: 1120px;
+  margin-inline: auto;
   display: grid;
   gap: 20px;
 }

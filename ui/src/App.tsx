@@ -789,7 +789,13 @@ export function App() {
             )}
 
             {isLibraryActive && (
-              <div style={{ marginBottom: 18 }}>
+              <div
+                style={
+                  route === "extensions"
+                    ? { maxWidth: 1120, margin: "0 auto 18px" }
+                    : { marginBottom: 18 }
+                }
+              >
                 <div className="segmented-bar">
                   <button
                     type="button"
