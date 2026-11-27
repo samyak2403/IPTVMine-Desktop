@@ -19,6 +19,8 @@ pub const UPSTREAM_FFMPEG_REPO: &str = "https://github.com/FFmpeg/FFmpeg";
 #[serde(rename_all = "camelCase")]
 pub struct FfmpegStatus {
     pub installed: bool,
+    #[serde(default)]
+    pub installing: bool,
     pub version: Option<String>,
     pub short_version: Option<String>,
     pub ffmpeg_path: Option<String>,
@@ -141,10 +143,12 @@ fn resolve_candidate(custom_path: Option<&str>) -> Option<(PathBuf, Option<PathB
     }
 
     if let Ok(cur) = std::env::current_exe() {
-        if let Some(bundled) = cur.parent().map(|d| d.join("bin").join(&ffmpeg_name)) {
-            if bundled.is_file() {
-                let probe = find_sibling_ffprobe(&bundled).or_else(|| find_in_path("ffprobe"));
-                return Some((bundled, probe, "bundled"));
+        for rel in ["bin", "resources/bin"] {
+            if let Some(bundled) = cur.parent().map(|d| d.join(rel).join(&ffmpeg_name)) {
+                if bundled.is_file() {
+                    let probe = find_sibling_ffprobe(&bundled).or_else(|| find_in_path("ffprobe"));
+                    return Some((bundled, probe, "bundled"));
+                }
             }
         }
     }
@@ -265,6 +269,7 @@ pub fn detect_ffmpeg_status(custom_path: Option<&str>) -> FfmpegStatus {
     let Some((ffmpeg_exe, ffprobe_exe, source)) = resolve_candidate(custom_path) else {
         return FfmpegStatus {
             installed: false,
+            installing: false,
             version: None,
             short_version: None,
             ffmpeg_path: None,
@@ -290,6 +295,7 @@ pub fn detect_ffmpeg_status(custom_path: Option<&str>) -> FfmpegStatus {
 
     FfmpegStatus {
         installed: version.is_some(),
+        installing: false,
         version,
         short_version,
         ffmpeg_path: Some(ffmpeg_exe.to_string_lossy().into_owned()),

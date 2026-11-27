@@ -319,6 +319,10 @@ pub enum StartupTab {
     Category,
 }
 
+fn default_true_val() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -336,6 +340,8 @@ pub struct AppSettings {
     pub external_player_path: String,
     #[serde(default)]
     pub download_dir: String,
+    #[serde(default = "default_true_val")]
+    pub ffmpeg_enabled: bool,
     #[serde(default)]
     pub ffmpeg_path: String,
 }
@@ -350,6 +356,7 @@ impl Default for AppSettings {
             developer_test_mode: false,
             external_player_path: String::new(),
             download_dir: String::new(),
+            ffmpeg_enabled: true,
             ffmpeg_path: String::new(),
         }
     }
@@ -538,5 +545,19 @@ mod tests {
         assert_eq!(parsed.r#type, ProviderType::Iptv);
         let out = serde_json::to_string(&parsed).unwrap();
         assert!(out.contains("\"type\":\"IPTV\""));
+    }
+
+    #[test]
+    fn app_settings_defaults_ffmpeg_enabled_on_for_legacy_json() {
+        let defaults = AppSettings::default();
+        assert!(defaults.ffmpeg_enabled);
+
+        let legacy_json = r#"{"blackTheme": true, "startupTab": "movies"}"#;
+        let parsed: AppSettings =
+            serde_json::from_str(legacy_json).expect("deserialize legacy AppSettings");
+        assert!(parsed.black_theme);
+        assert_eq!(parsed.startup_tab, StartupTab::Movies);
+        assert!(parsed.ffmpeg_enabled);
+        assert!(parsed.ffmpeg_path.is_empty());
     }
 }

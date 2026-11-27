@@ -35,6 +35,7 @@ pub struct AppState {
     pub data_dir: PathBuf,
     pub cached_channels: RwLock<Vec<Channel>>,
     pub content_filter: ContentFilter,
+    pub ffmpeg_install_lock: tokio::sync::Mutex<()>,
 }
 
 fn now_ms() -> i64 {
@@ -479,7 +480,11 @@ fn get_app_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
 }
 
 #[tauri::command]
-fn save_app_settings(settings: AppSettings, state: State<'_, AppState>) -> Result<AppSettings, String> {
+fn save_app_settings(
+    app: AppHandle,
+    settings: AppSettings,
+    state: State<'_, AppState>,
+) -> Result<AppSettings, String> {
     state
         .storage
         .save_app_settings(&settings)
@@ -496,8 +501,58 @@ fn save_app_settings(settings: AppSettings, state: State<'_, AppState>) -> Resul
         Some(settings.ffmpeg_path.clone())
     };
     state.stream_proxy.set_ffmpeg_path(ff.clone());
-    state.download_manager.set_ffmpeg_path(ff);
+    state.download_manager.set_ffmpeg_path(ff.clone());
+    if settings.ffmpeg_enabled && !detect_ffmpeg_status(ff.as_deref()).installed {
+        let h = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let st = h.state::<AppState>();
+            let _ = ensure_ffmpeg_ready_internal(&st, Some(&h), false).await;
+        });
+    }
     Ok(settings)
+}
+
+async fn ensure_ffmpeg_ready_internal(
+    state: &AppState,
+    app: Option<&AppHandle>,
+    force_install: bool,
+) -> Result<FfmpegStatus, String> {
+    let _guard = state.ffmpeg_install_lock.lock().await;
+    let settings = state.storage.get_app_settings().unwrap_or_default();
+    let custom = if settings.ffmpeg_path.trim().is_empty() {
+        None
+    } else {
+        Some(settings.ffmpeg_path.as_str())
+    };
+    let mut status = check_ffmpeg_status_with_upstream(&state.http_client, custom).await;
+
+    let should_auto_install = !status.installed && (settings.ffmpeg_enabled || force_install);
+    let should_auto_update = status.installed
+        && (force_install || (status.source == "managed" && status.update_available && settings.ffmpeg_enabled));
+
+    if should_auto_install || should_auto_update {
+        if let Some(handle) = app {
+            let mut installing_status = status.clone();
+            installing_status.installing = true;
+            let _ = handle.emit("ffmpeg://status", installing_status);
+        }
+        status = download_latest_ffmpeg(&state.http_client)
+            .await
+            .map_err(|e| {
+                if let Some(handle) = app {
+                    let _ = handle.emit("ffmpeg://status", status.clone());
+                }
+                e.to_string()
+            })?;
+        let ff = custom.map(str::to_string);
+        state.stream_proxy.set_ffmpeg_path(ff.clone());
+        state.download_manager.set_ffmpeg_path(ff);
+    }
+
+    if let Some(handle) = app {
+        let _ = handle.emit("ffmpeg://status", status.clone());
+    }
+    Ok(status)
 }
 
 #[tauri::command]
@@ -523,19 +578,11 @@ async fn check_ffmpeg_upstream_status(state: State<'_, AppState>) -> Result<Ffmp
 }
 
 #[tauri::command]
-async fn install_ffmpeg_runtime(state: State<'_, AppState>) -> Result<FfmpegStatus, String> {
-    let status = download_latest_ffmpeg(&state.http_client)
-        .await
-        .map_err(|e| e.to_string())?;
-    let settings = state.storage.get_app_settings().unwrap_or_default();
-    let ff = if settings.ffmpeg_path.trim().is_empty() {
-        None
-    } else {
-        Some(settings.ffmpeg_path)
-    };
-    state.stream_proxy.set_ffmpeg_path(ff.clone());
-    state.download_manager.set_ffmpeg_path(ff);
-    Ok(status)
+async fn install_ffmpeg_runtime(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<FfmpegStatus, String> {
+    ensure_ffmpeg_ready_internal(&state, Some(&app), true).await
 }
 
 #[tauri::command]
@@ -857,6 +904,13 @@ pub fn run() {
                 data_dir,
                 cached_channels: RwLock::new(Vec::new()),
                 content_filter: ContentFilter::new(),
+                ffmpeg_install_lock: tokio::sync::Mutex::new(()),
+            });
+
+            let handle_for_ff = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state = handle_for_ff.state::<AppState>();
+                let _ = ensure_ffmpeg_ready_internal(&state, Some(&handle_for_ff), false).await;
             });
 
             let handle_for_dl = app.handle().clone();

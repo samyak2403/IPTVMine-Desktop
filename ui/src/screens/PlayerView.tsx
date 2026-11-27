@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import Hls from "hls.js";
 import {
   ArrowLeft,
@@ -26,6 +27,7 @@ import type {
 
 interface Props {
   request: PlaybackRequest;
+  ffmpegEnabled?: boolean;
   onClose: () => void;
   onEpisodeResolved?: (nextReq: PlaybackRequest) => void;
 }
@@ -48,11 +50,12 @@ function needsContainerRemux(url: string): boolean {
   );
 }
 
-export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
+export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeResolved }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const hideTimerRef = useRef<number | null>(null);
+  const waitingForFfmpegRef = useRef(false);
 
   const mirrors: VegaStream[] =
     request.mirrors && request.mirrors.length > 0
@@ -92,11 +95,29 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
   const [installingFfmpeg, setInstallingFfmpeg] = useState(false);
   const [probeResult, setProbeResult] = useState<MediaProbeResult | null>(null);
   const [proxySession, setProxySession] = useState<ProxiedStream | null>(null);
-  const [useFfmpeg, setUseFfmpeg] = useState<boolean>(() =>
-    needsContainerRemux(activeStream.link)
+  const [useFfmpeg, setUseFfmpeg] = useState<boolean>(
+    () => ffmpegEnabled && needsContainerRemux(activeStream.link)
   );
   const [ffmpegSeekSec, setFfmpegSeekSec] = useState(0);
   const [ffmpegAudioIdx, setFfmpegAudioIdx] = useState(0);
+  const [ffmpegReadyTick, setFfmpegReadyTick] = useState(0);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listen<FfmpegStatus>("ffmpeg://status", (e) => {
+      setFfmpegStatus(e.payload);
+      setInstallingFfmpeg(Boolean(e.payload.installing));
+      if (e.payload.installed && waitingForFfmpegRef.current) {
+        waitingForFfmpegRef.current = false;
+        setFfmpegReadyTick((n) => n + 1);
+      }
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, []);
 
   const [errorMsg, setErrorMsg] = useState("");
   const [statusNotice, setStatusNotice] = useState("");
@@ -156,8 +177,8 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
     setSelectedSubtitle(-1);
     setSubtitleTracks([]);
     setProbeResult(null);
-    setUseFfmpeg(needsContainerRemux(activeStream.link));
-  }, [activeStream.link, mirrorIdx, request.link]);
+    setUseFfmpeg(ffmpegEnabled && needsContainerRemux(activeStream.link));
+  }, [activeStream.link, mirrorIdx, request.link, ffmpegEnabled]);
 
   useEffect(() => {
     let cancelled = false;
@@ -181,6 +202,9 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
       const ffStatus = await api.getFfmpegStatus().catch(() => null);
       if (cancelled) return;
       setFfmpegStatus(ffStatus);
+      if (ffStatus?.installing) {
+        setInstallingFfmpeg(true);
+      }
 
       const mergedHeaders = {
         ...(request.headers ?? {}),
@@ -190,8 +214,13 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
       const lower = activeStream.link.toLowerCase();
       if (lower.startsWith("rtmp://") || lower.startsWith("rtmps://")) {
         if (!ffStatus?.installed) {
+          if (ffStatus?.installing) {
+            waitingForFfmpegRef.current = true;
+          }
           setErrorMsg(
-            "RTMP streams require FFmpeg (click Download Latest FFmpeg below) or VLC / mpv."
+            ffStatus?.installing
+              ? "Setting up FFmpeg automatically... Playback will start as soon as setup finishes, or open in VLC / mpv."
+              : "RTMP streams require FFmpeg or VLC / mpv."
           );
           return;
         }
@@ -212,13 +241,15 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
         : await api.getResumePositionMs(request.link).catch(() => 0);
       if (cancelled) return;
 
-      // Probe media when FFmpeg is enabled or stream is non-HLS to discover tracks/codecs
+      // Probe media automatically when FFmpeg is enabled to surface multi-audio, subtitles & codec remuxing
       let probe = probeResult;
       const shouldProbe =
+        ffmpegEnabled &&
         ffStatus?.installed &&
         (useFfmpeg ||
           needsContainerRemux(activeStream.link) ||
-          /\.(mp4|mkv|avi|mov|ts|flv|wmv)(\?|#|$)/i.test(lower));
+          /\.(mp4|mkv|avi|mov|ts|flv|wmv)(\?|#|$)/i.test(lower) ||
+          (!lower.includes(".m3u8") && !request.isLive));
 
       if (shouldProbe && !probe) {
         probe = await api
@@ -253,8 +284,13 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
 
       if (useFfmpeg) {
         if (!ffStatus?.installed) {
+          if (ffStatus?.installing) {
+            waitingForFfmpegRef.current = true;
+            setStatusNotice("Setting up FFmpeg automatically...");
+            return;
+          }
           setErrorMsg(
-            "This format requires FFmpeg for in-app playback. Download Latest FFmpeg below or open in VLC/mpv."
+            "This format requires FFmpeg for in-app playback. Setting up FFmpeg or open in VLC/mpv."
           );
           return;
         }
@@ -359,7 +395,7 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
         hlsRef.current = null;
       }
     };
-  }, [activeStream.link, mirrorIdx, request.link, useFfmpeg, ffmpegSeekSec, ffmpegAudioIdx]);
+  }, [activeStream.link, mirrorIdx, request.link, useFfmpeg, ffmpegSeekSec, ffmpegAudioIdx, ffmpegReadyTick]);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -865,11 +901,13 @@ export function PlayerView({ request, onClose, onEpisodeResolved }: Props) {
               ) : (
                 <button
                   className="btn btn-primary"
-                  disabled={installingFfmpeg}
+                  disabled={installingFfmpeg || Boolean(ffmpegStatus?.installing)}
                   onClick={() => void handleInstallFfmpegAndRetry()}
                 >
                   <Download size={14} />{" "}
-                  {installingFfmpeg ? "Installing FFmpeg..." : "Download Latest FFmpeg"}
+                  {installingFfmpeg || ffmpegStatus?.installing
+                    ? "Setting up FFmpeg..."
+                    : "Install / Retry FFmpeg"}
                 </button>
               )}
               <button

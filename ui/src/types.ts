@@ -33,11 +33,13 @@ export interface AppSettings {
   developerTestMode: boolean;
   externalPlayerPath: string;
   downloadDir: string;
+  ffmpegEnabled: boolean;
   ffmpegPath: string;
 }
 
 export interface FfmpegStatus {
   installed: boolean;
+  installing?: boolean;
   version?: string | null;
   shortVersion?: string | null;
   ffmpegPath?: string | null;

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { Cpu, Download, Pencil, Play, RefreshCw, Trash2, Upload } from "lucide-react";
 import { api, isTauriRuntime } from "./api";
 import { formatOttTitle, HeroMarquee, MidBanner, OttCarousel, type OttCardItem } from "./components/OttUi";
@@ -61,6 +62,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   developerTestMode: false,
   externalPlayerPath: "",
   downloadDir: "",
+  ffmpegEnabled: true,
   ffmpegPath: "",
 };
 
@@ -127,6 +129,19 @@ export function App() {
       ? "amoled"
       : "dark";
   }, [settings.blackTheme]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listen<FfmpegStatus>("ffmpeg://status", (e) => {
+      setFfmpegStatus(e.payload);
+      setInstallingFfmpeg(Boolean(e.payload.installing));
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, []);
 
   const refreshHomeFeed = useCallback(async (provList: Provider[]) => {
     const activeVega = provList.filter((p) => p.isActive && p.type === "VEGA");
@@ -1249,17 +1264,21 @@ export function App() {
                   />
                 </div>
 
-                <div className="card" style={{ display: "grid", gap: 10 }}>
+                <div className="card" style={{ display: "grid", gap: 12 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                     <div>
                       <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <Cpu size={16} color="#ffc062" /> FFmpeg Media Engine
-                        {ffmpegStatus?.installed ? (
+                        {!settings.ffmpegEnabled ? (
+                          <span className="ott-meta-pill">Disabled</span>
+                        ) : installingFfmpeg || ffmpegStatus?.installing ? (
+                          <span className="ott-meta-pill amber">Auto-Installing Latest...</span>
+                        ) : ffmpegStatus?.installed ? (
                           <span className="ott-meta-pill amber">
                             Ready {ffmpegStatus.shortVersion ? `v${ffmpegStatus.shortVersion}` : ""} • {ffmpegStatus.source}
                           </span>
                         ) : (
-                          <span className="ott-meta-pill">Not Installed</span>
+                          <span className="ott-meta-pill">Auto-Install Pending</span>
                         )}
                         {ffmpegStatus?.upstreamVersion && (
                           <a
@@ -1279,58 +1298,72 @@ export function App() {
                         )}
                       </div>
                       <div className="muted" style={{ marginTop: 4 }}>
-                        {ffmpegStatus?.installed
-                          ? ffmpegStatus.version || ffmpegStatus.ffmpegPath
-                          : "Enables MKV/AC3/DTS/RTMP remuxing, multi-audio & subtitles, and HLS (.m3u8) downloads via github.com/FFmpeg/FFmpeg."}
+                        {!settings.ffmpegEnabled
+                          ? "FFmpeg auto-remuxing, multi-audio probing, subtitles & HLS downloads are paused."
+                          : installingFfmpeg || ffmpegStatus?.installing
+                            ? "Automatically downloading and configuring latest FFmpeg/FFmpeg in the background — no manual install needed."
+                            : ffmpegStatus?.installed
+                              ? ffmpegStatus.version || ffmpegStatus.ffmpegPath
+                              : "Auto-installs on startup and enables MKV/AC3/DTS/RTMP remuxing, multi-audio & subtitles, and HLS downloads via github.com/FFmpeg/FFmpeg."}
                       </div>
                     </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={installingFfmpeg}
-                        onClick={() => void api.checkFfmpegUpstreamStatus().then(setFfmpegStatus)}
-                      >
-                        <RefreshCw size={14} /> Check FFmpeg/FFmpeg
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        disabled={installingFfmpeg}
-                        onClick={async () => {
-                          setInstallingFfmpeg(true);
-                          setFfmpegError("");
-                          try {
-                            setFfmpegStatus(await api.installFfmpegRuntime());
-                          } catch (err) {
-                            setFfmpegError(String(err));
-                          } finally {
-                            setInstallingFfmpeg(false);
-                          }
-                        }}
-                      >
-                        <Download size={14} />{" "}
-                        {installingFfmpeg
-                          ? "Downloading Latest..."
-                          : ffmpegStatus?.installed
-                            ? ffmpegStatus.updateAvailable && ffmpegStatus.upstreamVersion
-                              ? `Update to v${ffmpegStatus.upstreamVersion}`
-                              : "Reinstall Latest FFmpeg"
-                            : `Download Latest${ffmpegStatus?.upstreamVersion ? ` (v${ffmpegStatus.upstreamVersion})` : ""}`}
-                      </button>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span className="muted" style={{ fontSize: 12 }}>Default On</span>
+                      <input
+                        type="checkbox"
+                        aria-label="Enable FFmpeg Media Engine by default"
+                        className="apple-switch"
+                        checked={settings.ffmpegEnabled}
+                        onChange={(e) => void updateSettings({ ffmpegEnabled: e.target.checked })}
+                      />
                     </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={installingFfmpeg || ffmpegStatus?.installing}
+                      onClick={() => void api.checkFfmpegUpstreamStatus().then(setFfmpegStatus)}
+                    >
+                      <RefreshCw size={14} /> Check FFmpeg/FFmpeg
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={installingFfmpeg || ffmpegStatus?.installing}
+                      onClick={async () => {
+                        setInstallingFfmpeg(true);
+                        setFfmpegError("");
+                        try {
+                          setFfmpegStatus(await api.installFfmpegRuntime());
+                        } catch (err) {
+                          setFfmpegError(String(err));
+                        } finally {
+                          setInstallingFfmpeg(false);
+                        }
+                      }}
+                    >
+                      <Download size={14} />{" "}
+                      {installingFfmpeg || ffmpegStatus?.installing
+                        ? "Installing Latest..."
+                        : ffmpegStatus?.installed
+                          ? ffmpegStatus.updateAvailable && ffmpegStatus.upstreamVersion
+                            ? `Update to v${ffmpegStatus.upstreamVersion}`
+                            : "Reinstall / Verify Latest"
+                          : `Install Latest${ffmpegStatus?.upstreamVersion ? ` (v${ffmpegStatus.upstreamVersion})` : ""}`}
+                    </button>
                   </div>
                   {ffmpegError && <div className="error-text">{ffmpegError}</div>}
                   <div style={{ fontWeight: 600, marginTop: 2 }}>Custom FFmpeg Path (Optional)</div>
                   <input
                     className="input"
-                    placeholder="Auto-detect managed/system FFmpeg, or paste custom ffmpeg.exe path / bin dir"
+                    placeholder="Auto-installed by default, or paste custom ffmpeg.exe path / bin dir"
                     value={settings.ffmpegPath}
                     onChange={async (e) => {
                       await updateSettings({ ffmpegPath: e.target.value });
                       void api.checkFfmpegUpstreamStatus().then(setFfmpegStatus).catch(() => {
-          void api.getFfmpegStatus().then(setFfmpegStatus).catch(() => {});
-        });
+                        void api.getFfmpegStatus().then(setFfmpegStatus).catch(() => {});
+                      });
                     }}
                   />
                 </div>
@@ -1412,6 +1445,7 @@ export function App() {
       {activePlayback && (
         <PlayerView
           request={activePlayback}
+          ffmpegEnabled={settings.ffmpegEnabled}
           onClose={() => {
             setActivePlayback(null);
             void api.getWatchHistory().then(setHistory).catch(() => {});
