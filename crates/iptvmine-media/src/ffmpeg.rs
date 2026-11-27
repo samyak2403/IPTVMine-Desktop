@@ -830,7 +830,13 @@ pub fn build_transcode_args(
 ) -> Vec<String> {
     let trimmed = target.trim();
     let is_http = trimmed.starts_with("http://") || trimmed.starts_with("https://");
-    let mut args: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into()];
+    let mut args: Vec<String> = vec![
+        "-hide_banner".into(),
+        "-loglevel".into(),
+        "error".into(),
+        "-fflags".into(),
+        "+genpts+discardcorrupt".into(),
+    ];
 
     if start_sec > 0.5 && !trimmed.starts_with("rtmp") && !trimmed.starts_with("udp") {
         args.push("-ss".into());
@@ -906,7 +912,13 @@ pub fn build_subtitle_vtt_args(
 ) -> Vec<String> {
     let trimmed = target.trim();
     let is_http = trimmed.starts_with("http://") || trimmed.starts_with("https://");
-    let mut args: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into()];
+    let mut args: Vec<String> = vec![
+        "-hide_banner".into(),
+        "-loglevel".into(),
+        "error".into(),
+        "-fflags".into(),
+        "+genpts+discardcorrupt".into(),
+    ];
 
     if is_http {
         let (ua, hdrs) = format_ffmpeg_headers(headers);

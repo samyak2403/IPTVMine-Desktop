@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import playCircleSvg from "../assets/figma/play-circle.svg";
 
@@ -327,54 +327,79 @@ export function OttCarousel({ title, variant, items, headerAction }: CarouselPro
         onPointerCancel={handlePointerEnd}
       >
         {items.map((item) => (
-          <button
+          <OttCard
             key={item.id}
-            type="button"
-            className={cardClass}
-            onClick={() => {
-              if (!dragState.current.moved) {
-                item.onClick();
-              }
-            }}
-          >
-            {item.image ? (
-              <img
-                className="ott-card-media"
-                src={item.image}
-                alt={item.title}
-                loading="lazy"
-                draggable={false}
-              />
-            ) : (
-              <div
-                className="ott-card-media"
-                style={{
-                  background:
-                    "radial-gradient(circle at 75% 22%, rgba(255,192,98,0.22), rgba(24,24,28,1) 70%)",
-                }}
-              />
-            )}
-            <div className="ott-card-scrim" />
-            <div className="ott-card-caption">
-              {item.badge && (
-                <span className="badge" style={{ width: "fit-content" }}>
-                  {item.badge}
-                </span>
-              )}
-              <h3 className="ott-tall-title">{item.title}</h3>
-              {item.subtitle && <div className="ott-card-sub">{item.subtitle}</div>}
-              {item.progressPct !== undefined && item.progressPct > 0 && (
-                <div className="ott-progress-bar">
-                  <div
-                    className="ott-progress-fill"
-                    style={{ width: `${Math.min(100, item.progressPct)}%` }}
-                  />
-                </div>
-              )}
-            </div>
-          </button>
+            item={item}
+            cardClass={cardClass}
+            canClick={() => !dragState.current.moved}
+          />
         ))}
       </div>
     </section>
+  );
+}
+
+function OttCard({
+  item,
+  cardClass,
+  canClick,
+}: {
+  item: OttCardItem;
+  cardClass: string;
+  canClick: () => boolean;
+}) {
+  const [imgFailed, setImgFailed] = useState(false);
+
+  useEffect(() => {
+    setImgFailed(false);
+  }, [item.image]);
+
+  return (
+    <button
+      type="button"
+      className={cardClass}
+      onClick={() => {
+        if (canClick()) item.onClick();
+      }}
+    >
+      {item.image && !imgFailed ? (
+        <img
+          className="ott-card-media"
+          src={item.image}
+          alt={item.title}
+          loading="lazy"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          draggable={false}
+          onError={() => setImgFailed(true)}
+        />
+      ) : (
+        <div
+          className="ott-card-media"
+          style={{
+            background:
+              "radial-gradient(circle at 75% 22%, rgba(255,192,98,0.22), rgba(24,24,28,1) 70%)",
+          }}
+        />
+      )}
+      <div className="ott-card-scrim" />
+      <div className="ott-card-caption">
+        {item.badge && (
+          <span className="badge" style={{ width: "fit-content" }}>
+            {item.badge}
+          </span>
+        )}
+        <h3 className="ott-tall-title">{item.title}</h3>
+        {item.subtitle && <div className="ott-card-sub">{item.subtitle}</div>}
+        {item.progressPct !== undefined && item.progressPct > 0 && (
+          <div className="ott-progress-bar">
+            <div
+              className="ott-progress-fill"
+              style={{ width: `${Math.min(100, item.progressPct)}%` }}
+            />
+          </div>
+        )}
+      </div>
+    </button>
   );
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Cpu, Download, Pencil, Play, RefreshCw, Trash2, Upload } from "lucide-react";
 import { api, isTauriRuntime } from "./api";
+import { ChannelLogo } from "./components/ChannelLogo";
 import { formatOttTitle, HeroMarquee, MidBanner, OttCarousel, type OttCardItem } from "./components/OttUi";
 import { DownloadsView } from "./screens/DownloadsView";
 import { ExtensionsView } from "./screens/ExtensionsView";
@@ -961,21 +962,16 @@ export function App() {
                           })
                         }
                       >
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            gap: 8,
-                            marginBottom: 8,
-                          }}
-                        >
-                          <span style={{ fontWeight: 600 }}>{ch.name}</span>
-                          <Play size={14} color="#ffc062" />
-                        </div>
-                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                          <span className="badge">{ch.category}</span>
-                          <span className="muted">{ch.streamType}</span>
+                        <div className="channel-card-row">
+                          <ChannelLogo src={ch.logoUrl} name={ch.name} size={44} />
+                          <div className="channel-card-meta">
+                            <div className="channel-card-title">{ch.name}</div>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                              <span className="badge">{ch.category}</span>
+                              <span className="muted" style={{ fontSize: 12 }}>{ch.streamType}</span>
+                            </div>
+                          </div>
+                          <Play size={14} color="#ffc062" style={{ flexShrink: 0 }} />
                         </div>
                       </button>
                     ))}

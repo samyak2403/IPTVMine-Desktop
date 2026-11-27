@@ -227,9 +227,17 @@ pub fn parse_m3u(raw: &str, filter: &ContentFilter) -> Vec<Channel> {
         if line.starts_with("#EXTINF:") {
             has_extinf = true;
             pending_headers.clear();
-            let (attrs, title) = split_extinf(line);
-            pending_name = clean_title(title);
-            pending_logo = extract_attr(attrs, "tvg-logo").unwrap_or_default();
+            let (attrs, raw_title) = split_extinf(line);
+            let sanitized_title = match raw_title.rsplit_once(',') {
+                Some((left, right)) if left.contains("=\"") || left.contains("='") => right.trim(),
+                _ => raw_title,
+            };
+            pending_name = clean_title(sanitized_title);
+            pending_logo = ["tvg-logo", "logo", "tvg_logo", "x-logo", "channel-logo", "tvg-icon"]
+                .iter()
+                .find_map(|key| extract_attr(attrs, key))
+                .filter(|val| !val.eq_ignore_ascii_case("null") && !val.eq_ignore_ascii_case("undefined"))
+                .unwrap_or_default();
             pending_category = extract_attr(attrs, "group-title")
                 .map(|c| clean_title(&c))
                 .filter(|c| !c.is_empty())
@@ -281,11 +289,12 @@ pub fn parse_m3u(raw: &str, filter: &ContentFilter) -> Vec<Channel> {
 }
 
 fn split_extinf(line: &str) -> (&str, &str) {
-    let mut in_quotes = false;
+    let mut quote_char: Option<char> = None;
     for (idx, ch) in line.char_indices() {
         match ch {
-            '"' => in_quotes = !in_quotes,
-            ',' if !in_quotes => return (&line[..idx], line[idx + 1..].trim()),
+            '"' | '\'' if quote_char.is_none() => quote_char = Some(ch),
+            q if quote_char == Some(q) => quote_char = None,
+            ',' if quote_char.is_none() => return (&line[..idx], line[idx + 1..].trim()),
             _ => {}
         }
     }
@@ -294,12 +303,39 @@ fn split_extinf(line: &str) -> (&str, &str) {
 
 fn extract_attr(attrs: &str, key: &str) -> Option<String> {
     let lower = attrs.to_ascii_lowercase();
-    let needle = format!("{key}=\"");
-    if let Some(pos) = lower.find(&needle) {
-        let start = pos + needle.len();
-        if let Some(end) = attrs[start..].find('"') {
-            return Some(attrs[start..start + end].trim().to_string());
+    let key_lower = key.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let mut search_from = 0;
+
+    while let Some(rel) = lower[search_from..].find(&key_lower) {
+        let pos = search_from + rel;
+        let boundary_ok = pos == 0 || {
+            let prev = bytes[pos - 1];
+            prev.is_ascii_whitespace() || prev == b':' || prev == b','
+        };
+        let mut cursor = pos + key_lower.len();
+        if boundary_ok {
+            while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
+                cursor += 1;
+            }
+            if cursor < bytes.len() && bytes[cursor] == b'=' {
+                cursor += 1;
+                while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
+                    cursor += 1;
+                }
+                if cursor < bytes.len() && (bytes[cursor] == b'"' || bytes[cursor] == b'\'') {
+                    let quote = bytes[cursor] as char;
+                    let start = cursor + 1;
+                    if let Some(end) = attrs[start..].find(quote) {
+                        let value = attrs[start..start + end].trim();
+                        if !value.is_empty() {
+                            return Some(value.to_string());
+                        }
+                    }
+                }
+            }
         }
+        search_from = pos + key_lower.len();
     }
     None
 }
@@ -655,12 +691,33 @@ https://cdn.example.com/blocked.m3u8
         let channels = parse_playlist(m3u, &ContentFilter::new());
         assert_eq!(channels.len(), 1);
         assert_eq!(channels[0].name, "World News HD");
+        assert_eq!(channels[0].logo_url, "https://img/news.png");
         assert_eq!(channels[0].category, "News");
         assert_eq!(channels[0].stream_type, "HLS");
         assert_eq!(
             channels[0].headers.get("User-Agent").map(String::as_str),
             Some("MyPlayer/2.0")
         );
+
+        let variants = r#"#EXTM3U
+#EXTINF:-1 tvg-logo='https://img/single.png' group-title="Sports", Sports Single
+https://cdn.example.com/sports.m3u8
+#EXTINF:-1 logo="https://img/fallback.png" group-title="Music", Music Fallback
+https://cdn.example.com/music.m3u8
+"#;
+        let parsed = parse_playlist(variants, &ContentFilter::new());
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].logo_url, "https://img/single.png");
+        assert_eq!(parsed[1].logo_url, "https://img/fallback.png");
+
+        let broken_ua = r#"#EXTM3U
+#EXTINF:-1 tvg-logo="https://img/4tv.png" group-title="News",like Gecko) Chrome/147.0.0.0 Safari/537.36" group-title="News",4TV News (576p)
+https://cdn.example.com/4tv.m3u8
+"#;
+        let cleaned = parse_playlist(broken_ua, &ContentFilter::new());
+        assert_eq!(cleaned.len(), 1);
+        assert_eq!(cleaned[0].name, "4TV News (576p)");
+        assert_eq!(cleaned[0].logo_url, "https://img/4tv.png");
     }
 
     #[test]

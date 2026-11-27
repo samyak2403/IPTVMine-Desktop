@@ -62,6 +62,7 @@ struct ProxyAppState {
     client: Client,
     sessions: Arc<RwLock<HashMap<String, ProxySession>>>,
     custom_ffmpeg_path: Arc<RwLock<Option<String>>>,
+    transcode_errors: Arc<RwLock<HashMap<String, String>>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -102,12 +103,14 @@ impl StreamProxy {
             client,
             sessions: sessions.clone(),
             custom_ffmpeg_path: custom_ffmpeg_path.clone(),
+            transcode_errors: Arc::new(RwLock::new(HashMap::new())),
         };
 
         let app = Router::new()
             .route("/stream", get(handle_stream))
             .route("/local", get(handle_local_file))
             .route("/transcode", get(handle_transcode))
+            .route("/transcode-error", get(handle_transcode_error))
             .route("/subtitles", get(handle_subtitles))
             .with_state(state);
 
@@ -564,6 +567,8 @@ fn find_external_player(configured_path: Option<&str>) -> Option<PathBuf> {
 struct ChildStdoutReader {
     _child: Child,
     stdout: ChildStdout,
+    prefix: Vec<u8>,
+    prefix_pos: usize,
 }
 
 impl AsyncRead for ChildStdoutReader {
@@ -572,8 +577,53 @@ impl AsyncRead for ChildStdoutReader {
         cx: &mut TaskContext<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
+        if self.prefix_pos < self.prefix.len() {
+            let remaining = &self.prefix[self.prefix_pos..];
+            let to_copy = remaining.len().min(buf.remaining());
+            buf.put_slice(&remaining[..to_copy]);
+            self.prefix_pos += to_copy;
+            return Poll::Ready(Ok(()));
+        }
         Pin::new(&mut self.stdout).poll_read(cx, buf)
     }
+}
+
+fn summarize_ffmpeg_stderr(raw: &str) -> String {
+    let last = raw
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with("Error opening input file "))
+        .next_back()
+        .unwrap_or("Stream could not be decoded by FFmpeg");
+    let cleaned = last
+        .strip_prefix("Error opening input files: ")
+        .or_else(|| last.strip_prefix("Error opening input: "))
+        .unwrap_or(last);
+    if cleaned.starts_with('[') {
+        if let Some((_, rest)) = cleaned.split_once("] ") {
+            return rest.trim().to_string();
+        }
+    }
+    cleaned.to_string()
+}
+
+async fn handle_transcode_error(
+    State(state): State<ProxyAppState>,
+    Query(query): Query<StreamQuery>,
+) -> Response {
+    let msg = state
+        .transcode_errors
+        .read()
+        .ok()
+        .and_then(|map| map.get(&query.session).cloned())
+        .unwrap_or_default();
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Body::from(msg))
+        .unwrap()
 }
 
 async fn handle_transcode(
@@ -590,6 +640,10 @@ async fn handle_transcode(
         return error_response(StatusCode::NOT_FOUND, "unknown media session");
     };
 
+    if let Ok(mut errs) = state.transcode_errors.write() {
+        errs.remove(&query.session);
+    }
+
     let custom_ffmpeg = state
         .custom_ffmpeg_path
         .read()
@@ -598,7 +652,7 @@ async fn handle_transcode(
     let Some(ffmpeg_exe) = ffmpeg::resolve_ffmpeg_exe(custom_ffmpeg.as_deref()) else {
         return error_response(
             StatusCode::PRECONDITION_REQUIRED,
-            "FFmpeg is not installed. Download FFmpeg in Preferences to play this format.",
+            "FFmpeg is not installed. Setup FFmpeg in Preferences to play this format.",
         );
     };
 
@@ -614,7 +668,7 @@ async fn handle_transcode(
     cmd.args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .kill_on_drop(true);
     ffmpeg::apply_no_window_tokio(&mut cmd);
 
@@ -622,13 +676,62 @@ async fn handle_transcode(
         Ok(c) => c,
         Err(e) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
     };
-    let Some(stdout) = child.stdout.take() else {
+    let Some(mut stdout) = child.stdout.take() else {
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, "ffmpeg stdout unavailable");
     };
+    let mut stderr = child.stderr.take();
 
+    let mut first_buf = vec![0u8; 8192];
+    let first_read = tokio::time::timeout(Duration::from_secs(12), stdout.read(&mut first_buf)).await;
+    let first_len = match first_read {
+        Ok(Ok(n)) if n > 0 => n,
+        Ok(Ok(_)) => {
+            let mut err_buf = Vec::new();
+            if let Some(mut se) = stderr.take() {
+                let _ = tokio::time::timeout(Duration::from_secs(2), se.read_to_end(&mut err_buf)).await;
+            }
+            let summary = summarize_ffmpeg_stderr(&String::from_utf8_lossy(&err_buf));
+            if let Ok(mut errs) = state.transcode_errors.write() {
+                if errs.len() > 64 {
+                    errs.clear();
+                }
+                errs.insert(query.session.clone(), summary.clone());
+            }
+            let _ = child.kill().await;
+            return error_response(StatusCode::BAD_GATEWAY, &summary);
+        }
+        Ok(Err(e)) => {
+            let summary = e.to_string();
+            if let Ok(mut errs) = state.transcode_errors.write() {
+                errs.insert(query.session.clone(), summary.clone());
+            }
+            let _ = child.kill().await;
+            return error_response(StatusCode::BAD_GATEWAY, &summary);
+        }
+        Err(_) => {
+            let summary = "Stream timed out waiting for FFmpeg frames".to_string();
+            if let Ok(mut errs) = state.transcode_errors.write() {
+                errs.insert(query.session.clone(), summary.clone());
+            }
+            let _ = child.kill().await;
+            return error_response(StatusCode::GATEWAY_TIMEOUT, &summary);
+        }
+    };
+
+    // Drain stderr asynchronously so ffmpeg never blocks writing diagnostics while streaming.
+    if let Some(mut se) = stderr.take() {
+        tokio::spawn(async move {
+            let mut sink = tokio::io::sink();
+            let _ = tokio::io::copy(&mut se, &mut sink).await;
+        });
+    }
+
+    first_buf.truncate(first_len);
     let reader = ChildStdoutReader {
         _child: child,
         stdout,
+        prefix: first_buf,
+        prefix_pos: 0,
     };
     let stream = ReaderStream::with_capacity(reader, 64 * 1024);
 
@@ -755,5 +858,11 @@ mod tests {
         let picked = ffmpeg::pick_latest_upstream_ffmpeg_tag(&tags).unwrap();
         assert_eq!(picked, ("n9.1".into(), "9.1".into()));
         assert_eq!(ffmpeg::parse_semver_tuple("ffmpeg version 9.1-essentials_build"), Some((9, 1, 0)));
+
+        let sample_err = "[in#0 @ 0x1] Error opening input: Server returned 404 Not Found\nError opening input file https://x.example/live.m3u8.\nError opening input files: Server returned 404 Not Found\n";
+        assert_eq!(
+            summarize_ffmpeg_stderr(sample_err),
+            "Server returned 404 Not Found"
+        );
     }
 }
