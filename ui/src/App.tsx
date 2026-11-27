@@ -104,9 +104,12 @@ export function App() {
   const [initError, setInitError] = useState("");
   const [downloads, setDownloads] = useState<DownloadTask[]>([]);
 
-  // Live TV filters
+  // Live TV filters & progressive channel loading
+  const LIVE_TV_PAGE_SIZE = 120;
   const [channelQuery, setChannelQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const [visibleChannelsCount, setVisibleChannelsCount] = useState(LIVE_TV_PAGE_SIZE);
+  const liveSentinelRef = useRef<HTMLDivElement>(null);
 
   // DNS test state
   const [dnsTest, setDnsTest] = useState<DnsTestResult | null>(null);
@@ -292,16 +295,54 @@ export function App() {
   }, [channels]);
 
   const filteredChannels = useMemo(() => {
+    const activeCat = categories.includes(selectedCategory) ? selectedCategory : "All";
     const q = channelQuery.trim().toLowerCase();
     return channels.filter((c) => {
-      const catOk = selectedCategory === "All" || c.category === selectedCategory;
+      const catOk = activeCat === "All" || c.category === activeCat;
       const qOk =
         !q ||
         c.name.toLowerCase().includes(q) ||
         c.category.toLowerCase().includes(q);
       return catOk && qOk;
     });
-  }, [channels, channelQuery, selectedCategory]);
+  }, [channels, channelQuery, selectedCategory, categories]);
+
+  useEffect(() => {
+    setVisibleChannelsCount(LIVE_TV_PAGE_SIZE);
+  }, [channelQuery, selectedCategory]);
+
+  useEffect(() => {
+    if (route !== "television" || visibleChannelsCount >= filteredChannels.length) {
+      return;
+    }
+    const sentinel = liveSentinelRef.current;
+    if (!sentinel) return;
+    const root = sentinel.closest(".ott-main") as HTMLElement | null;
+    const loadNextBatch = () =>
+      setVisibleChannelsCount((prev) =>
+        Math.min(filteredChannels.length, prev + LIVE_TV_PAGE_SIZE)
+      );
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          loadNextBatch();
+        }
+      },
+      { root, rootMargin: "900px 0px" }
+    );
+    observer.observe(sentinel);
+    const onScroll = () => {
+      if (!root) return;
+      if (root.scrollHeight - (root.scrollTop + root.clientHeight) <= 900) {
+        loadNextBatch();
+      }
+    };
+    root?.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      observer.disconnect();
+      root?.removeEventListener("scroll", onScroll);
+    };
+  }, [route, visibleChannelsCount, filteredChannels.length]);
 
   const activeDownloadsCount = useMemo(
     () => downloads.filter((d) => d.status === "DOWNLOADING" || d.status === "PENDING").length,
@@ -1091,73 +1132,114 @@ export function App() {
                     </div>
                   </div>
                 ) : (
-                  <div className="live-vcard-grid">
-                    {filteredChannels.slice(0, 120).map((ch) => {
-                      const numericRes = ch.name.match(/\b(\d{3,4}p|4k|uhd)\b/i);
-                      const fallbackTier = !numericRes ? ch.name.match(/\b(fhd|hd)\b/i) : null;
-                      const resolutionLabel = (numericRes?.[1] ?? fallbackTier?.[1] ?? "").toUpperCase();
-                      const primaryCategories = ch.category
-                        .split(/[;,]/)
-                        .map((part) => part.trim())
-                        .filter(Boolean)
-                        .slice(0, 2)
-                        .join(" · ");
+                  <>
+                    <div className="live-vcard-grid">
+                      {filteredChannels.slice(0, visibleChannelsCount).map((ch, idx) => {
+                        const numericRes = ch.name.match(/\b(\d{3,4}p|4k|uhd)\b/i);
+                        const fallbackTier = !numericRes ? ch.name.match(/\b(fhd|hd)\b/i) : null;
+                        const resolutionLabel = (numericRes?.[1] ?? fallbackTier?.[1] ?? "").toUpperCase();
+                        const primaryCategories = ch.category
+                          .split(/[;,]/)
+                          .map((part) => part.trim())
+                          .filter(Boolean)
+                          .slice(0, 2)
+                          .join(" · ");
 
-                      return (
-                        <button
-                          type="button"
-                          key={`${ch.name}-${ch.streamUrl}`}
-                          className="live-vcard"
-                          onClick={() =>
-                            setActivePlayback({
-                              title: ch.name,
-                              link: ch.streamUrl,
-                              streamUrl: ch.streamUrl,
-                              headers: ch.headers,
-                              imageUrl: ch.logoUrl,
-                              isLive: true,
-                              channel: ch,
-                            })
-                          }
-                        >
-                          <div className="live-vcard-frame">
-                            <div className="live-vcard-top">
-                              <span className="live-vcard-pill is-live">
-                                <span className="live-vcard-dot" aria-hidden="true" />
-                                <span>{ch.streamType || "LIVE"}</span>
-                              </span>
-                              {resolutionLabel && (
-                                <span className="live-vcard-pill">{resolutionLabel}</span>
-                              )}
-                            </div>
-
-                            <div className="live-vcard-stage">
-                              <div className="live-vcard-emblem">
-                                <ChannelLogo src={ch.logoUrl} name={ch.name} size={74} />
+                        return (
+                          <button
+                            type="button"
+                            key={`${ch.streamUrl}-${ch.name}-${idx}`}
+                            className="live-vcard"
+                            onClick={() =>
+                              setActivePlayback({
+                                title: ch.name,
+                                link: ch.streamUrl,
+                                streamUrl: ch.streamUrl,
+                                headers: ch.headers,
+                                imageUrl: ch.logoUrl,
+                                isLive: true,
+                                channel: ch,
+                              })
+                            }
+                          >
+                            <div className="live-vcard-frame">
+                              <div className="live-vcard-top">
+                                <span className="live-vcard-pill is-live">
+                                  <span className="live-vcard-dot" aria-hidden="true" />
+                                  <span>{ch.streamType || "LIVE"}</span>
+                                </span>
+                                {resolutionLabel && (
+                                  <span className="live-vcard-pill">{resolutionLabel}</span>
+                                )}
                               </div>
+
+                              <div className="live-vcard-stage">
+                                <div className="live-vcard-emblem">
+                                  <ChannelLogo src={ch.logoUrl} name={ch.name} size={74} />
+                                </div>
+                              </div>
+
+                              <span className="apple-poster-play" aria-hidden="true">
+                                <Play size={15} fill="currentColor" style={{ marginLeft: 1 }} />
+                              </span>
+                              <div className="apple-poster-rim" />
                             </div>
 
-                            <span className="apple-poster-play" aria-hidden="true">
-                              <Play size={15} fill="currentColor" style={{ marginLeft: 1 }} />
-                            </span>
-                            <div className="apple-poster-rim" />
-                          </div>
+                            <div className="live-vcard-caption">
+                              <h3 className="live-vcard-title" title={ch.name}>
+                                {ch.name}
+                              </h3>
+                              <span
+                                className="live-vcard-meta"
+                                title={ch.category || "Live Channel"}
+                              >
+                                {primaryCategories || "Live Channel"}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
 
-                          <div className="live-vcard-caption">
-                            <h3 className="live-vcard-title" title={ch.name}>
-                              {ch.name}
-                            </h3>
-                            <span
-                              className="live-vcard-meta"
-                              title={ch.category || "Live Channel"}
-                            >
-                              {primaryCategories || "Live Channel"}
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
+                    <div
+                      ref={liveSentinelRef}
+                      style={{
+                        marginTop: 26,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 10,
+                      }}
+                    >
+                      <div className="muted" style={{ fontSize: 13 }}>
+                        {visibleChannelsCount < filteredChannels.length
+                          ? `Showing ${visibleChannelsCount.toLocaleString()} of ${filteredChannels.length.toLocaleString()} channels`
+                          : `All ${filteredChannels.length.toLocaleString()} channels loaded`}
+                      </div>
+                      {visibleChannelsCount < filteredChannels.length && (
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
+                          <button
+                            type="button"
+                            className="btn"
+                            onClick={() =>
+                              setVisibleChannelsCount((prev) =>
+                                Math.min(filteredChannels.length, prev + LIVE_TV_PAGE_SIZE)
+                              )
+                            }
+                          >
+                            Load More (+{Math.min(LIVE_TV_PAGE_SIZE, filteredChannels.length - visibleChannelsCount)})
+                          </button>
+                          <button
+                            type="button"
+                            className="btn"
+                            onClick={() => setVisibleChannelsCount(filteredChannels.length)}
+                          >
+                            Show All ({filteredChannels.length.toLocaleString()})
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             )}
