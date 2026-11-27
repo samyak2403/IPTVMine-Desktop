@@ -939,6 +939,12 @@ textarea {
   line-height: 1.1;
 }
 
+.ott-account-nav-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 22px;
+}
+
 .segmented-bar {
   display: inline-flex;
   padding: 4px;
@@ -2721,7 +2727,9 @@ textarea {
 .dns-screen {
   display: grid;
   gap: 18px;
+  width: 100%;
   max-width: 920px;
+  margin-inline: auto;
 }
 
 .dns-header {
@@ -3170,7 +3178,9 @@ textarea {
 .pref-screen {
   display: grid;
   gap: 24px;
+  width: 100%;
   max-width: 920px;
+  margin-inline: auto;
 }
 
 .pref-header {
@@ -3516,7 +3526,9 @@ textarea {
 .prov-screen {
   display: grid;
   gap: 24px;
+  width: 100%;
   max-width: 920px;
+  margin-inline: auto;
 }
 
 .prov-composer {

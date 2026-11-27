@@ -988,7 +988,7 @@ export function App() {
             )}
 
             {isAccountActive && (
-              <div style={{ marginBottom: 20 }}>
+              <div className="ott-account-nav-wrap">
                 <div className="segmented-bar">
                   <button
                     type="button"
