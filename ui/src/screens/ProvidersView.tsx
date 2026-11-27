@@ -22,6 +22,47 @@ const PROVIDER_TYPES: { value: ProviderType; label: string }[] = [
   { value: "VIDEO", label: "VIDEO" },
 ];
 
+const SOURCE_TYPE_COPY: Record<
+  ProviderType,
+  {
+    newHeading: string;
+    editHeading: string;
+    urlLabel: string;
+    urlPlaceholder: string;
+    titlePlaceholder: string;
+    saveCta: string;
+    updateCta: string;
+  }
+> = {
+  IPTV: {
+    newHeading: "New IPTV Playlist Source",
+    editHeading: "Update IPTV Source",
+    urlLabel: "Playlist URL",
+    urlPlaceholder: "https://example.com/playlist.m3u or channel JSON URL",
+    titlePlaceholder: "Friendly name for Live TV & Home sections",
+    saveCta: "Save IPTV Source",
+    updateCta: "Update IPTV Source",
+  },
+  VEGA: {
+    newHeading: "New Vega Extension Source",
+    editHeading: "Update Vega Source",
+    urlLabel: "Vega Manifest or GitHub Source",
+    urlPlaceholder: "manifest.json URL, GitHub repo URL, or @owner/repo",
+    titlePlaceholder: "Friendly name for Movies & Extensions",
+    saveCta: "Save Vega Source",
+    updateCta: "Update Vega Source",
+  },
+  VIDEO: {
+    newHeading: "New Direct Video Source",
+    editHeading: "Update Video Source",
+    urlLabel: "Direct Stream URL",
+    urlPlaceholder: "Direct .mp4, .mkv, .m3u8, rtmp://, or rtsp:// stream URL",
+    titlePlaceholder: "Display name in Connected Sources",
+    saveCta: "Save Video Source",
+    updateCta: "Update Video Source",
+  },
+};
+
 interface Props {
   providers: Provider[];
   editingUrl: string | null;
@@ -84,6 +125,7 @@ export function ProvidersView({
 
   const showUaDrawer = uaExpandedManual || Boolean(newUa.trim());
   const isInspecting = inspectInfo === "Inspecting...";
+  const sourceCopy = SOURCE_TYPE_COPY[detectedType];
 
   const activeStats = useMemo(() => {
     const activeCount = providers.filter((p) => p.isActive).length;
@@ -151,7 +193,7 @@ export function ProvidersView({
         <form ref={composerRef} className="pref-group prov-composer" onSubmit={onSubmit}>
           <div className="prov-composer-head">
             <div className="prov-composer-title">
-              <span>{editingUrl ? "Update Configured Source" : "New Playlist or Extension"}</span>
+              <span>{editingUrl ? sourceCopy.editHeading : sourceCopy.newHeading}</span>
               {!manualTypeOverride && newUrl.trim().length > 0 && (
                 <span className="prov-auto-pill">Auto-detected</span>
               )}
@@ -180,13 +222,13 @@ export function ProvidersView({
           <div className="prov-form-grid">
             <div className="prov-field">
               <label htmlFor={urlInputId} className="prov-field-label">
-                Source URL or Handle
+                {sourceCopy.urlLabel}
               </label>
               <div className="pref-input-wrap">
                 <input
                   id={urlInputId}
                   className="input pref-path-input"
-                  placeholder="Playlist URL, Vega manifest, @owner/repo, or stream URL"
+                  placeholder={sourceCopy.urlPlaceholder}
                   value={newUrl}
                   onChange={(e) => onUrlChange(e.target.value)}
                 />
@@ -211,7 +253,7 @@ export function ProvidersView({
                 <input
                   id={titleInputId}
                   className="input pref-path-input"
-                  placeholder="Friendly name for sidebar & Home sections"
+                  placeholder={sourceCopy.titlePlaceholder}
                   value={newTitle}
                   onChange={(e) => onTitleChange(e.target.value)}
                 />
@@ -338,8 +380,8 @@ export function ProvidersView({
                 {savingProvider
                   ? "Saving..."
                   : editingUrl
-                    ? "Update Provider"
-                    : "Save Provider"}
+                    ? sourceCopy.updateCta
+                    : sourceCopy.saveCta}
               </button>
             </div>
           </div>
