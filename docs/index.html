@@ -18,7 +18,9 @@
       --accent-blue: #0071e3;
       --accent-blue-hover: #0077ed;
       --accent-cyan: #2997ff;
-      --accent-magenta: #f04a93;
+      --accent-amber: #ff9f0a;
+      --accent-emerald: #30d158;
+      --accent-purple: #bf5af2;
       --text-primary: #ffffff;
       --text-secondary: rgba(255, 255, 255, 0.72);
       --text-tertiary: rgba(255, 255, 255, 0.44);
@@ -75,6 +77,20 @@
       z-index: 0;
     }
 
+    /* Common SVG styles */
+    .svg-icon {
+      width: 20px;
+      height: 20px;
+      stroke-width: 2;
+      stroke: currentColor;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      display: inline-block;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+
     /* Navigation Bar */
     header.nav-header {
       position: sticky;
@@ -85,7 +101,6 @@
       -webkit-backdrop-filter: blur(24px);
       background: rgba(6, 8, 13, 0.72);
       border-bottom: 1px solid var(--border-subtle);
-      transition: background 0.3s ease;
     }
 
     .nav-container {
@@ -137,7 +152,10 @@
     }
 
     .nav-btn {
-      background: rgba(255, 255, 255, 0.1);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.08);
       color: var(--text-primary);
       text-decoration: none;
       font-size: 0.85rem;
@@ -282,9 +300,10 @@
       transform: translateY(-2px);
     }
 
-    .btn-icon {
-      font-size: 1.6rem;
-      line-height: 1;
+    .btn-icon-svg {
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
     }
 
     .btn-text-block {
@@ -319,6 +338,9 @@
       color: var(--accent-cyan);
       text-decoration: none;
       font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
     }
 
     .download-alt-links a:hover {
@@ -335,11 +357,19 @@
       margin: 36px auto 0;
       display: flex;
       align-items: flex-start;
-      gap: 12px;
+      gap: 14px;
       text-align: left;
       font-size: 0.85rem;
       color: rgba(255, 255, 255, 0.82);
       line-height: 1.45;
+    }
+
+    .notice-icon-svg {
+      width: 22px;
+      height: 22px;
+      stroke: var(--accent-amber);
+      flex-shrink: 0;
+      margin-top: 1px;
     }
 
     .notice-banner strong {
@@ -448,10 +478,27 @@
       box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
     }
 
-    .card-icon {
-      font-size: 2rem;
-      margin-bottom: 18px;
-      display: inline-block;
+    .card-icon-wrap {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      color: var(--accent-cyan);
+    }
+
+    .card-icon-svg {
+      width: 24px;
+      height: 24px;
+      stroke-width: 2;
+      stroke: currentColor;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
 
     .card-title {
@@ -482,6 +529,24 @@
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       gap: 24px;
       margin-top: 24px;
+    }
+
+    .spec-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .spec-icon-wrap {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 8px;
+      color: var(--text-secondary);
     }
 
     .spec-item .spec-label {
@@ -520,6 +585,9 @@
       color: var(--text-secondary);
       text-decoration: none;
       transition: color 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
     }
 
     .footer-links a:hover {
@@ -554,7 +622,13 @@
         <a href="#showcase" class="nav-link">Showcase</a>
         <a href="#features" class="nav-link">Features</a>
         <a href="privacy.html" class="nav-link">Privacy</a>
-        <a href="https://github.com/samyak2403/IPTVMine-Desktop" target="_blank" rel="noopener noreferrer" class="nav-btn">GitHub</a>
+        <a href="https://github.com/samyak2403/IPTVMine-Desktop" target="_blank" rel="noopener noreferrer" class="nav-btn">
+          <!-- GitHub Octocat SVG -->
+          <svg class="svg-icon" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+          <span>GitHub</span>
+        </a>
       </nav>
     </div>
   </header>
@@ -578,7 +652,10 @@
       <!-- Downloads Group -->
       <div class="download-actions-grid">
         <a href="/downloads/0.1.0/IPTVMine_0.1.0_x64_en-US.msi" download class="download-card-btn btn-primary">
-          <span class="btn-icon">📦</span>
+          <!-- Windows Logo SVG -->
+          <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/>
+          </svg>
           <span class="btn-text-block">
             <span class="btn-label">Download Windows MSI</span>
             <span class="btn-meta">v0.1.0 x64 Installer • 8.13 MB</span>
@@ -586,7 +663,12 @@
         </a>
 
         <a href="/downloads/0.1.0/IPTVMine_0.1.0_x64-setup.exe" download class="download-card-btn btn-secondary">
-          <span class="btn-icon">⚙️</span>
+          <!-- Download Setup Binary SVG -->
+          <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
           <span class="btn-text-block">
             <span class="btn-label">Download Windows EXE</span>
             <span class="btn-meta">v0.1.0 x64 Setup • 5.84 MB</span>
@@ -597,13 +679,21 @@
       <div class="download-alt-links">
         <span>Looking for other architectures?</span>
         <a href="https://github.com/samyak2403/IPTVMine-Desktop/releases/latest" target="_blank" rel="noopener noreferrer">
-          Windows ARM64 • macOS Universal • Linux x64 on GitHub Releases →
+          <span>Windows ARM64 • macOS Universal • Linux x64 on GitHub Releases</span>
+          <svg class="svg-icon" style="width:14px;height:14px;" viewBox="0 0 24 24">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
         </a>
       </div>
 
       <!-- Legal BYO Notice -->
       <div class="notice-banner">
-        <span>⚠️</span>
+        <!-- Shield Alert SVG -->
+        <svg class="notice-icon-svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
         <div>
           <strong>Bring-Your-Own-Content Notice:</strong> IPTVMine does not host, preload, bundle, or distribute any media content, TV channels, or playlists. You must provide your own lawful M3U/M3U8 playlists or direct media links.
         </div>
@@ -633,7 +723,13 @@
 
       <div class="bento-grid">
         <div class="bento-card">
-          <span class="card-icon">🔒</span>
+          <div class="card-icon-wrap" style="color: var(--accent-emerald);">
+            <!-- Lock & Privacy Shield SVG -->
+            <svg class="card-icon-svg" viewBox="0 0 24 24">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
           <h3 class="card-title">100% Local-First Privacy</h3>
           <p class="card-desc">
             No accounts, no cloud sync, and zero tracking. Your playlists, history, and preferences stay strictly inside local SQLite on your own PC.
@@ -641,7 +737,13 @@
         </div>
 
         <div class="bento-card">
-          <span class="card-icon">📺</span>
+          <div class="card-icon-wrap" style="color: var(--accent-cyan);">
+            <!-- TV / Monitor Playlist SVG -->
+            <svg class="card-icon-svg" viewBox="0 0 24 24">
+              <rect x="2" y="7" width="20" height="15" rx="2" ry="2"/>
+              <polyline points="17 2 12 7 7 2"/>
+            </svg>
+          </div>
           <h3 class="card-title">Bring-Your-Own Sources</h3>
           <p class="card-desc">
             Import M3U, M3U8, and IPTV JSON playlists directly from URLs or local files. Easily manage custom User-Agents and channel categories.
@@ -649,7 +751,13 @@
         </div>
 
         <div class="bento-card">
-          <span class="card-icon">⚡</span>
+          <div class="card-icon-wrap" style="color: var(--accent-purple);">
+            <!-- Play Circle & Stream Handoff SVG -->
+            <svg class="card-icon-svg" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10"/>
+              <polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/>
+            </svg>
+          </div>
           <h3 class="card-title">HLS Player & External Handoff</h3>
           <p class="card-desc">
             High-performance built-in video player with instant keyboard shortcuts, plus seamless 1-click launch to external players like VLC or mpv.
@@ -657,7 +765,14 @@
         </div>
 
         <div class="bento-card">
-          <span class="card-icon">📥</span>
+          <div class="card-icon-wrap" style="color: var(--accent-amber);">
+            <!-- Resumable Offline Download SVG -->
+            <svg class="card-icon-svg" viewBox="0 0 24 24">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+          </div>
           <h3 class="card-title">Resumable Offline Downloads</h3>
           <p class="card-desc">
             Integrated background download manager with pause/resume support and automatic crash recovery on startup.
@@ -665,7 +780,12 @@
         </div>
 
         <div class="bento-card">
-          <span class="card-icon">🌑</span>
+          <div class="card-icon-wrap" style="color: #ffffff;">
+            <!-- Moon / AMOLED Dark Mode SVG -->
+            <svg class="card-icon-svg" viewBox="0 0 24 24">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            </svg>
+          </div>
           <h3 class="card-title">Pure AMOLED Black Canvas</h3>
           <p class="card-desc">
             Apple-crafted OTT interface with smooth spring physics, custom borderless window shell, and a true #000000 OLED theme option.
@@ -673,7 +793,14 @@
         </div>
 
         <div class="bento-card">
-          <span class="card-icon">🛡️</span>
+          <div class="card-icon-wrap" style="color: var(--accent-blue-hover);">
+            <!-- Globe & Encrypted DNS SVG -->
+            <svg class="card-icon-svg" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="2" y1="12" x2="22" y2="12"/>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            </svg>
+          </div>
           <h3 class="card-title">Encrypted DNS-over-HTTPS</h3>
           <p class="card-desc">
             Bypass ISP DNS blocks natively with built-in DoH resolvers (Cloudflare, Google, AdGuard, or custom endpoints) and live latency checks.
@@ -687,18 +814,57 @@
       <h3 style="font-size: 1.25rem; font-weight: 700;">System Requirements</h3>
       <div class="specs-grid">
         <div class="spec-item">
+          <div class="spec-icon-wrap">
+            <!-- OS Monitor SVG -->
+            <svg class="svg-icon" viewBox="0 0 24 24">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+          </div>
           <div class="spec-label">Operating System</div>
           <div class="spec-val">Windows 10 / 11 (64-bit)</div>
         </div>
         <div class="spec-item">
+          <div class="spec-icon-wrap">
+            <!-- Memory RAM SVG -->
+            <svg class="svg-icon" viewBox="0 0 24 24">
+              <path d="M6 19v2M10 19v2M14 19v2M18 19v2M6 3v2M10 3v2M14 3v2M18 3v2"/>
+              <rect x="3" y="5" width="18" height="14" rx="2"/>
+            </svg>
+          </div>
           <div class="spec-label">Memory</div>
           <div class="spec-val">2 GB RAM (4 GB Rec.)</div>
         </div>
         <div class="spec-item">
+          <div class="spec-icon-wrap">
+            <!-- Hard Drive SVG -->
+            <svg class="svg-icon" viewBox="0 0 24 24">
+              <line x1="22" y1="12" x2="2" y2="12"/>
+              <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
+              <line x1="6" y1="16" x2="6.01" y2="16"/>
+              <line x1="10" y1="16" x2="10.01" y2="16"/>
+            </svg>
+          </div>
           <div class="spec-label">Storage</div>
           <div class="spec-val">&lt; 50 MB Free Space</div>
         </div>
         <div class="spec-item">
+          <div class="spec-icon-wrap">
+            <!-- CPU Processor SVG -->
+            <svg class="svg-icon" viewBox="0 0 24 24">
+              <rect x="4" y="4" width="16" height="16" rx="2"/>
+              <rect x="9" y="9" width="6" height="6"/>
+              <line x1="9" y1="1" x2="9" y2="4"/>
+              <line x1="15" y1="1" x2="15" y2="4"/>
+              <line x1="9" y1="20" x2="9" y2="23"/>
+              <line x1="15" y1="20" x2="15" y2="23"/>
+              <line x1="20" y1="9" x2="23" y2="9"/>
+              <line x1="20" y1="14" x2="23" y2="14"/>
+              <line x1="1" y1="9" x2="4" y2="9"/>
+              <line x1="1" y1="14" x2="4" y2="14"/>
+            </svg>
+          </div>
           <div class="spec-label">Architecture</div>
           <div class="spec-val">x64 / ARM64</div>
         </div>
@@ -709,10 +875,35 @@
   <!-- Footer -->
   <footer class="page-footer">
     <div class="footer-links">
-      <a href="privacy.html">Privacy Policy</a>
-      <a href="https://github.com/samyak2403/IPTVMine-Desktop" target="_blank" rel="noopener noreferrer">GitHub Repository</a>
-      <a href="https://github.com/samyak2403/IPTVMine-Desktop/releases/tag/v0.1.0" target="_blank" rel="noopener noreferrer">Release Notes (v0.1.0)</a>
-      <a href="/downloads/0.1.0/IPTVMine_0.1.0_x64_en-US.msi">Direct MSI Download</a>
+      <a href="privacy.html">
+        <svg class="svg-icon" style="width:16px;height:16px;" viewBox="0 0 24 24">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+        <span>Privacy Policy</span>
+      </a>
+      <a href="https://github.com/samyak2403/IPTVMine-Desktop" target="_blank" rel="noopener noreferrer">
+        <svg class="svg-icon" style="width:16px;height:16px;" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+        </svg>
+        <span>GitHub Repository</span>
+      </a>
+      <a href="https://github.com/samyak2403/IPTVMine-Desktop/releases/tag/v0.1.0" target="_blank" rel="noopener noreferrer">
+        <svg class="svg-icon" style="width:16px;height:16px;" viewBox="0 0 24 24">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+        <span>Release Notes (v0.1.0)</span>
+      </a>
+      <a href="/downloads/0.1.0/IPTVMine_0.1.0_x64_en-US.msi">
+        <svg class="svg-icon" style="width:16px;height:16px;" viewBox="0 0 24 24">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        <span>Direct MSI Download</span>
+      </a>
     </div>
     <p>Copyright © 2026 Samyak Kamble • Licensed under the MIT License.</p>
   </footer>
