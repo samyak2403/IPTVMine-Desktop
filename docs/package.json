@@ -1,0 +1,19 @@
+{
+  "name": "iptvmine-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "IPTVMine Desktop official download portal and web showcase",
+  "scripts": {
+    "dev": "npx serve .",
+    "start": "npx serve ."
+  },
+  "keywords": [
+    "iptv",
+    "desktop",
+    "tauri",
+    "media-player",
+    "downloads"
+  ],
+  "author": "Samyak Kamble",
+  "license": "MIT"
+}
