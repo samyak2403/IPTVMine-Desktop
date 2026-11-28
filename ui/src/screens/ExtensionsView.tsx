@@ -16,6 +16,7 @@ import type { Provider, VegaProvider } from "../types";
 
 interface Props {
   providers: Provider[];
+  initialSourceUrl?: string;
   onProvidersChanged?: (providers: Provider[]) => void;
   onExtensionsChanged?: (exts: VegaProvider[]) => void;
   onOpenMovies?: () => void;
@@ -129,6 +130,7 @@ function ExtensionCard({
 
 export function ExtensionsView({
   providers,
+  initialSourceUrl,
   onProvidersChanged,
   onExtensionsChanged,
   onOpenMovies,
@@ -142,7 +144,9 @@ export function ExtensionsView({
     [vegaProviders]
   );
 
-  const [selectedUrl, setSelectedUrl] = useState<string>(defaultActive?.url ?? "");
+  const [selectedUrl, setSelectedUrl] = useState<string>(
+    () => initialSourceUrl || defaultActive?.url || ""
+  );
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
   const [showAddSource, setShowAddSource] = useState(false);
   const [newSourceUrl, setNewSourceUrl] = useState("");
@@ -154,6 +158,12 @@ export function ExtensionsView({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const sourceRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (initialSourceUrl) {
+      setSelectedUrl(initialSourceUrl);
+    }
+  }, [initialSourceUrl]);
 
   useEffect(() => {
     if (!selectedUrl && defaultActive?.url) {

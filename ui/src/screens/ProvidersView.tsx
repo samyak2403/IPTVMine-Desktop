@@ -92,6 +92,7 @@ interface Props {
   onEditProvider: (p: Provider) => void;
   onToggleProvider: (p: Provider) => void;
   onRemoveProvider: (url: string) => void;
+  onOpenSource: (p: Provider) => void;
   onPlayVideo: (req: PlaybackRequest) => void;
 }
 
@@ -118,6 +119,7 @@ export function ProvidersView({
   onEditProvider,
   onToggleProvider,
   onRemoveProvider,
+  onOpenSource,
   onPlayVideo,
 }: Props) {
   const headingId = useId();
@@ -415,28 +417,36 @@ export function ProvidersView({
                     editingUrl === p.url ? "is-editing" : ""
                   }`}
                 >
-                  <span
-                    className={`pref-row-icon ${p.isActive ? "is-active" : ""}`}
-                    aria-hidden="true"
+                  <button
+                    type="button"
+                    className="prov-row-main"
+                    aria-label={`Open ${p.title} in Extensions`}
+                    title="Open in Extensions"
+                    onClick={() => onOpenSource(p)}
                   >
-                    {renderTypeIcon(p.type)}
-                  </span>
+                    <span
+                      className={`pref-row-icon ${p.isActive ? "is-active" : ""}`}
+                      aria-hidden="true"
+                    >
+                      {renderTypeIcon(p.type)}
+                    </span>
 
-                  <div className="prov-row-meta">
-                    <div className="prov-row-top">
-                      <span className="pref-row-title">{p.title}</span>
-                      <span className="ott-meta-pill amber">{PROVIDER_TYPE_BADGE[p.type]}</span>
-                      {p.type === "IPTV" && (
-                        <span className="ott-meta-pill dns-tabular">
-                          {p.channelCount.toLocaleString()} channels
-                        </span>
-                      )}
-                      {!p.isActive && <span className="ott-meta-pill">Paused</span>}
+                    <div className="prov-row-meta">
+                      <div className="prov-row-top">
+                        <span className="pref-row-title">{p.title}</span>
+                        <span className="ott-meta-pill amber">{PROVIDER_TYPE_BADGE[p.type]}</span>
+                        {p.type === "IPTV" && (
+                          <span className="ott-meta-pill dns-tabular">
+                            {p.channelCount.toLocaleString()} channels
+                          </span>
+                        )}
+                        {!p.isActive && <span className="ott-meta-pill">Paused</span>}
+                      </div>
+                      <div className="prov-row-url" title={p.url}>
+                        {p.url}
+                      </div>
                     </div>
-                    <div className="prov-row-url" title={p.url}>
-                      {p.url}
-                    </div>
-                  </div>
+                  </button>
 
                   <div className="prov-row-controls">
                     {p.type === "VIDEO" && (

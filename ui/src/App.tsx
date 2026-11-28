@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Play, RefreshCw } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Copy, Minus, Play, RefreshCw, Square, X } from "lucide-react";
 import { api, isTauriRuntime, safeListen } from "./api";
 import { ChannelLogo } from "./components/ChannelLogo";
 import { formatOttTitle, HeroMarquee, MidBanner, OttCarousel, type OttCardItem } from "./components/OttUi";
@@ -11,7 +12,7 @@ import { MoviesView } from "./screens/MoviesView";
 import { PlayerView } from "./screens/PlayerView";
 import { PreferencesView } from "./screens/PreferencesView";
 import { ProvidersView } from "./screens/ProvidersView";
-import { AboutView, BugReportView, LegalView } from "./screens/SettingsSubViews";
+import { AboutView, BugReportView } from "./screens/SettingsSubViews";
 import { WatchHistoryView } from "./screens/WatchHistoryView";
 import homeSvg from "./assets/drawable/home.svg";
 import homeActiveSvg from "./assets/drawable/home-active.svg";
@@ -49,8 +50,7 @@ type Route =
   | "dns"
   | "history"
   | "about"
-  | "bug-report"
-  | "legal";
+  | "bug-report";
 
 interface HomeVodSection {
   title: string;
@@ -126,11 +126,24 @@ export function App() {
     scraperValue: string;
   } | null>(null);
   const [moviesInitialFilter, setMoviesInitialFilter] = useState<string | undefined>(undefined);
+  const [extensionsSourceUrl, setExtensionsSourceUrl] = useState<string | undefined>(undefined);
 
   // Active full-screen playback overlay
   const [activePlayback, setActivePlayback] = useState<PlaybackRequest | null>(null);
   const activePlaybackRef = useRef<PlaybackRequest | null>(null);
   activePlaybackRef.current = activePlayback;
+  const [windowMaximized, setWindowMaximized] = useState(false);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    const win = getCurrentWindow();
+    const syncMax = () => {
+      void win.isMaximized().then(setWindowMaximized).catch(() => {});
+    };
+    syncMax();
+    window.addEventListener("resize", syncMax);
+    return () => window.removeEventListener("resize", syncMax);
+  }, []);
 
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
@@ -824,11 +837,46 @@ export function App() {
     route === "settings" ||
     route === "dns" ||
     route === "about" ||
-    route === "bug-report" ||
-    route === "legal";
+    route === "bug-report";
 
   return (
     <div className="ott-shell">
+      {isTauriRuntime() && !activePlayback && (
+        <>
+          <div className="ott-drag-strip" data-tauri-drag-region />
+          <div className="ott-win-controls" aria-label="Window Controls">
+            <button
+              type="button"
+              className="ott-win-btn"
+              aria-label="Minimize window"
+              onClick={() => void getCurrentWindow().minimize()}
+            >
+              <Minus size={13} />
+            </button>
+            <button
+              type="button"
+              className="ott-win-btn"
+              aria-label={windowMaximized ? "Restore window" : "Maximize window"}
+              onClick={async () => {
+                const win = getCurrentWindow();
+                await win.toggleMaximize();
+                setWindowMaximized(await win.isMaximized());
+              }}
+            >
+              {windowMaximized ? <Copy size={11} /> : <Square size={11} />}
+            </button>
+            <button
+              type="button"
+              className="ott-win-btn close"
+              aria-label="Close window"
+              onClick={() => void getCurrentWindow().close()}
+            >
+              <X size={13} />
+            </button>
+          </div>
+        </>
+      )}
+
       {/* Product_Nav Left Floating Gradient Icon Rail */}
       <nav className="ott-nav-rail" aria-label="Primary Navigation">
         <button
@@ -1180,13 +1228,6 @@ export function App() {
                   >
                     Diagnostics
                   </button>
-                  <button
-                    type="button"
-                    className={`seg-btn ${route === "legal" ? "active" : ""}`}
-                    onClick={() => setRoute("legal")}
-                  >
-                    Legal
-                  </button>
                 </div>
               </div>
             )}
@@ -1381,6 +1422,7 @@ export function App() {
             {route === "extensions" && (
               <ExtensionsView
                 providers={providers}
+                initialSourceUrl={extensionsSourceUrl}
                 onProvidersChanged={(updated) => {
                   setProviders(updated);
                   void refreshHomeFeed(updated);
@@ -1469,6 +1511,10 @@ export function App() {
                 }}
                 onToggleProvider={(p) => void handleToggleProvider(p)}
                 onRemoveProvider={(url) => void handleRemoveProvider(url)}
+                onOpenSource={(p) => {
+                  setExtensionsSourceUrl(p.type === "VEGA" ? p.url : undefined);
+                  setRoute("extensions");
+                }}
                 onPlayVideo={(req) => setActivePlayback(req)}
               />
             )}
@@ -1514,7 +1560,6 @@ export function App() {
               />
             )}
             {route === "bug-report" && <BugReportView onBack={() => setRoute("settings")} />}
-            {route === "legal" && <LegalView onBack={() => setRoute("settings")} />}
 
             {route === "dns" && (
               <DnsSettingsView

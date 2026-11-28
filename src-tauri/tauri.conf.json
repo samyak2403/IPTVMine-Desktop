@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "IPTVMine Desktop",
+  "productName": "IPTVMine",
   "version": "0.1.0",
   "identifier": "com.samyak.iptvminedesktop",
   "build": {
@@ -14,12 +14,13 @@
     "windows": [
       {
         "label": "main",
-        "title": "IPTVMine Desktop",
+        "title": "IPTVMine",
         "width": 1280,
         "height": 800,
         "minWidth": 960,
         "minHeight": 600,
-        "resizable": true
+        "resizable": true,
+        "decorations": false
       }
     ],
     "security": {
@@ -36,6 +37,12 @@
       "icons/icon.icns",
       "icons/icon.ico",
       "icons/icon.png"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico"
+      }
+    }
   }
 }

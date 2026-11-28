@@ -1300,6 +1300,35 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
         </div>
       )}
 
+      {/* Translucent Center Play / Pause Control */}
+      {!errorMsg && !showShortcuts && !bezel && (
+        <button
+          type="button"
+          className={`player-center-play ${effectiveHudVisible ? "visible" : "hidden"}${hudInstant ? " instant" : ""}`}
+          aria-label={playing ? "Pause" : "Play"}
+          aria-hidden={!effectiveHudVisible}
+          tabIndex={effectiveHudVisible ? 0 : -1}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (openPopover) {
+              setOpenPopover(null);
+            } else {
+              triggerPlayPause("pointer");
+            }
+            bumpHud("pointer");
+          }}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          <span className={`player-icon-swap${iconMorphing ? " morphing" : ""}`}>
+            {playing ? (
+              <Pause size={30} fill="currentColor" />
+            ) : (
+              <Play size={30} fill="currentColor" style={{ marginLeft: 3 }} />
+            )}
+          </span>
+        </button>
+      )}
+
       {/* Floating Top Chrome Bar */}
       <div
         className={`player-hud-top ${effectiveHudVisible ? "visible" : "hidden"}${hudInstant ? " instant" : ""}`}

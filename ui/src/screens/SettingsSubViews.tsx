@@ -1,12 +1,14 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
+  Bug,
   Check,
   ChevronRight,
   Copy,
   Cpu,
   Database,
   ExternalLink,
+  FileText,
   Film,
   Keyboard,
   Monitor,
@@ -330,106 +332,238 @@ export function AboutView({
   );
 }
 
-export function BugReportView({ onBack }: { onBack: () => void }) {
-  const [diagnostics, setDiagnostics] = useState("");
-  const [copied, setCopied] = useState(false);
+interface DiagnosticMetric {
+  label: string;
+  value: string;
+}
 
-  useEffect(() => {
-    void api.getDiagnosticsBundle().then(setDiagnostics);
+function parseDiagnosticMetrics(raw: string): DiagnosticMetric[] {
+  const rows: DiagnosticMetric[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    const idx = line.indexOf(":");
+    if (idx <= 0) continue;
+    const label = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1).trim();
+    if (label && value) {
+      rows.push({ label, value });
+    }
+  }
+  return rows;
+}
+
+/**
+ * Apple System Settings style redacted system diagnostics and GitHub issue submission view.
+ */
+export function BugReportView({ onBack }: { onBack: () => void }) {
+  const headingId = useId();
+  const [diagnostics, setDiagnostics] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<number | null>(null);
+
+  const loadDiagnostics = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const bundle = await api.getDiagnosticsBundle();
+      setDiagnostics(bundle);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  useEffect(() => {
+    void loadDiagnostics();
+    return () => {
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, [loadDiagnostics]);
+
+  const metrics = useMemo(() => parseDiagnosticMetrics(diagnostics), [diagnostics]);
+
+  const issueHref = useMemo(() => {
+    const body = diagnostics
+      ? `## Environment\n\`\`\`text\n${diagnostics.trim()}\n\`\`\`\n\n## Steps to Reproduce\n1. \n\n## Expected Behavior\n\n## Actual Behavior\n`
+      : "";
+    const params = new URLSearchParams();
+    params.set("title", "[Bug]: ");
+    if (body) params.set("body", body);
+    return `https://github.com/samyak2403/IPTVMine-Desktop/issues/new?${params.toString()}`;
+  }, [diagnostics]);
+
   async function copyDiagnostics() {
-    await navigator.clipboard.writeText(diagnostics);
+    if (!diagnostics) return;
+    try {
+      await navigator.clipboard.writeText(diagnostics);
+    } catch {
+      const area = document.createElement("textarea");
+      area.value = diagnostics;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand("copy");
+      document.body.removeChild(area);
+    }
     setCopied(true);
-    window.setTimeout(() => setCopied(false), 2000);
+    if (copyTimerRef.current !== null) {
+      window.clearTimeout(copyTimerRef.current);
+    }
+    copyTimerRef.current = window.setTimeout(() => setCopied(false), 2200);
   }
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <div className="page-header" style={{ marginBottom: 0 }}>
-        <h1 className="page-title">Diagnostics & Bug Report</h1>
-        <button className="btn" onClick={onBack}>
-          <ArrowLeft size={14} /> Back to Settings
-        </button>
-      </div>
-
-      <div className="card" style={{ display: "grid", gap: 12 }}>
-        <div className="muted">
-          Redacted diagnostic summary (all provider URLs, cookies, and custom headers are omitted):
+    <section className="pref-screen" aria-labelledby={headingId}>
+      <header className="pref-header">
+        <div className="pref-title-block">
+          <h1 id={headingId} className="pref-title">
+            Diagnostics &amp; Bug Report
+          </h1>
+          <p className="pref-subtitle">
+            Review your redacted runtime snapshot before copying logs or opening a GitHub bug report.
+          </p>
         </div>
-        <pre
-          style={{
-            margin: 0,
-            padding: 12,
-            borderRadius: 8,
-            background: "var(--bg-surface-elevated)",
-            fontSize: 13,
-            overflowX: "auto",
-          }}
-        >
-          {diagnostics || "Loading..."}
-        </pre>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button className="btn btn-primary" onClick={() => void copyDiagnostics()}>
-            {copied ? <Check size={14} /> : <Copy size={14} />}
-            {copied ? "Copied" : "Copy Diagnostics"}
-          </button>
-          <a
-            className="btn"
-            href="https://github.com/samyak2403/IPTVMine-Pro/issues/new"
-            target="_blank"
-            rel="noreferrer"
-            style={{ textDecoration: "none" }}
-          >
-            Open GitHub Issue
-          </a>
+
+        <div className="pref-summary-pill">
+          <span
+            className={`pref-summary-dot ${error || loading ? "is-amber" : "is-live"}`}
+            aria-hidden="true"
+          />
+          <span>
+            {loading
+              ? "Collecting Snapshot..."
+              : error
+                ? "Diagnostics Unavailable"
+                : `${metrics.length} Fields • Redacted`}
+          </span>
+        </div>
+      </header>
+
+      <div className="pref-section">
+        <div className="pref-section-label">Runtime Snapshot &amp; Privacy</div>
+        <div className="pref-group">
+          <div className="pref-row">
+            <div className="pref-row-icon is-active" aria-hidden="true">
+              <ShieldCheck size={18} />
+            </div>
+            <div className="pref-row-copy">
+              <div className="pref-row-title">Automatic Privacy Redaction</div>
+              <div className="pref-row-desc">
+                All playlist URLs, custom User-Agent strings, headers, and cookies are stripped locally before generating this summary.
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn about-nav-btn"
+              onClick={onBack}
+            >
+              <ArrowLeft size={14} aria-hidden="true" />
+              <span>Preferences</span>
+            </button>
+          </div>
+
+          {metrics.length > 0 && (
+            <div className="pref-row is-actions">
+              <div className="diag-metrics-grid">
+                {metrics.map((m) => (
+                  <div key={m.label} className="diag-metric-card">
+                    <span className="diag-metric-label">{m.label}</span>
+                    <span className="diag-metric-value" title={m.value}>
+                      {m.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
-    </div>
-  );
-}
 
-export function LegalView({ onBack }: { onBack: () => void }) {
-  const [tab, setTab] = useState<"disclaimer" | "privacy" | "terms">("disclaimer");
+      <div className="pref-section">
+        <div className="pref-section-label">Diagnostic Bundle &amp; Issue Submission</div>
+        <div className="pref-group">
+          <div className="pref-row is-wrap">
+            <div className="pref-row-icon" aria-hidden="true">
+              <FileText size={18} />
+            </div>
+            <div className="pref-row-copy">
+              <div className="pref-row-title">Redacted Diagnostic Summary</div>
+              <div className="pref-row-desc">
+                Copy this plain-text bundle to attach environment details cleanly to any support thread.
+              </div>
+            </div>
+            <div className="pref-action-buttons">
+              <button
+                type="button"
+                className="btn about-nav-btn"
+                disabled={loading}
+                onClick={() => void loadDiagnostics()}
+              >
+                <RefreshCw
+                  size={14}
+                  className={loading ? "is-spinning" : ""}
+                  aria-hidden="true"
+                />
+                <span>{loading ? "Refreshing..." : "Refresh"}</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary about-nav-btn"
+                disabled={loading || !diagnostics}
+                onClick={() => void copyDiagnostics()}
+              >
+                {copied ? (
+                  <Check size={14} aria-hidden="true" />
+                ) : (
+                  <Copy size={14} aria-hidden="true" />
+                )}
+                <span>{copied ? "Copied!" : "Copy Diagnostics"}</span>
+              </button>
+            </div>
+          </div>
 
-  return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <div className="page-header" style={{ marginBottom: 0 }}>
-        <h1 className="page-title">Legal & Disclaimers</h1>
-        <button className="btn" onClick={onBack}>
-          <ArrowLeft size={14} /> Back to Settings
-        </button>
+          <div className="pref-row is-actions">
+            {error ? (
+              <div className="pref-feedback is-error" role="alert">
+                Failed to load diagnostics: {error}
+              </div>
+            ) : (
+              <pre className="diag-code-box" aria-label="Redacted diagnostic bundle">
+                {diagnostics || "Collecting redacted system diagnostics..."}
+              </pre>
+            )}
+          </div>
+
+          <div className="pref-row is-wrap">
+            <div className="pref-row-icon is-active" aria-hidden="true">
+              <Bug size={18} />
+            </div>
+            <div className="pref-row-copy">
+              <div className="pref-row-title">Open a Bug Report on GitHub</div>
+              <div className="pref-row-desc">
+                Launches GitHub Issues pre-filled with your redacted environment details so issues can be reproduced quickly.
+              </div>
+            </div>
+            <div className="pref-action-buttons">
+              <a
+                className="btn about-nav-btn pref-ext-pill"
+                href={issueHref}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <ExternalLink size={14} aria-hidden="true" />
+                <span>Open GitHub Issue</span>
+              </a>
+            </div>
+          </div>
+        </div>
       </div>
-
-      <div className="chip-row" style={{ marginBottom: 0 }}>
-        <button className={`chip ${tab === "disclaimer" ? "active" : ""}`} onClick={() => setTab("disclaimer")}>
-          Disclaimer
-        </button>
-        <button className={`chip ${tab === "privacy" ? "active" : ""}`} onClick={() => setTab("privacy")}>
-          Privacy Policy
-        </button>
-        <button className={`chip ${tab === "terms" ? "active" : ""}`} onClick={() => setTab("terms")}>
-          Terms & Conditions
-        </button>
-      </div>
-
-      <div className="card" style={{ lineHeight: 1.6 }}>
-        {tab === "disclaimer" && (
-          <p style={{ margin: 0 }}>
-            IPTVMine Desktop does not host, store, index, or distribute any media content. All playlists, extension scripts, and video streams are configured and sourced solely by the user. Users are responsible for verifying that they have the right to access any third-party sources they configure.
-          </p>
-        )}
-        {tab === "privacy" && (
-          <p style={{ margin: 0 }}>
-            IPTVMine Desktop stores all providers, watch history, download queues, and preferences locally on your computer in SQLite. The application includes zero analytics SDKs, zero tracking, and zero telemetry uploaders. Network requests are sent only to the provider/DNS endpoints you configure and optionally to GitHub Releases when you check for updates.
-          </p>
-        )}
-        {tab === "terms" && (
-          <p style={{ margin: 0 }}>
-            IPTVMine Desktop is provided &ldquo;as is&rdquo; under the MIT License without warranty of any kind. Third-party JavaScript extension sources execute inside a sandboxed runtime, and you are solely responsible for trusting any external source repositories you install.
-          </p>
-        )}
-      </div>
-    </div>
+    </section>
   );
 }

@@ -1,0 +1,20 @@
+IPTVMine Privacy Policy
+Last updated: November 28, 2026
+
+1. Data Collection
+IPTVMine does not collect, store on developer servers, or share any personal data. The application operates locally on your device and does not require account creation. Your configured playlists, sources, viewing history, offline downloads, and preferences remain local to your device.
+
+2. Crash Reporting & Diagnostics
+IPTVMine does not include Crashlytics, analytics SDKs, or automatic background crash uploaders. If an unexpected application error occurs, diagnostic panic output is saved locally on your device only. Inside Diagnostics & Bug Report, you can inspect and manually copy a locally redacted summary before choosing whether to include it in an issue report—IPTVMine automatically strips all playlist URLs, custom headers, tokens, and cookies from that summary, including only basic runtime fields such as:
+- Application version, operating system, and CPU architecture
+- Theme mode, DNS-over-HTTPS mode, and developer mode toggle state
+- Counts of configured sources, loaded channels, downloads, and history entries
+
+3. Third-Party Services
+IPTVMine connects directly from your device to the IPTV playlists, extension repositories, video streams, metadata lookups, optional DNS-over-HTTPS resolvers, or update checks you choose to add or trigger. IPTVMine does not route, log, or monitor those connections through any developer backend. Please review the privacy policies of any third-party sources or DNS resolvers you configure.
+
+4. Changes to This Policy
+We may update this privacy policy from time to time. Changes will be posted on this page with an updated date. Continued use of IPTVMine after changes are published constitutes acceptance of the updated policy.
+
+5. Contact
+For privacy-related inquiries, open an issue on the IPTVMine GitHub repository (https://github.com/samyak2403/IPTVMine-Desktop/issues).
