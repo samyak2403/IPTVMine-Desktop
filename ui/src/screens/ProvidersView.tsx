@@ -355,7 +355,7 @@ export function ProvidersView({
                 <Search size={14} />
                 <span>{isInspecting ? "Inspecting..." : "Inspect URL"}</span>
               </button>
-              <label className="btn prov-upload-label">
+              <label tabIndex={0} className="btn prov-upload-label">
                 <Upload size={14} />
                 <span>Import .m3u / .json</span>
                 <input

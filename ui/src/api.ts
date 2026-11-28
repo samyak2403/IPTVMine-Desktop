@@ -1,4 +1,6 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { listen as tauriListen, type Event, type UnlistenFn } from "@tauri-apps/api/event";
+import { invokeTvFallback } from "./tvFallback";
 
 export function isTauriRuntime(): boolean {
   const w = window as unknown as {
@@ -8,11 +10,19 @@ export function isTauriRuntime(): boolean {
   return Boolean(w.__TAURI_INTERNALS__?.invoke || w.__TAURI__?.core?.invoke);
 }
 
+export async function safeListen<T>(
+  event: string,
+  handler: (event: Event<T>) => void
+): Promise<UnlistenFn> {
+  if (!isTauriRuntime()) {
+    return () => {};
+  }
+  return tauriListen<T>(event, handler);
+}
+
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!isTauriRuntime()) {
-    throw new Error(
-      "Desktop backend is unavailable in a browser tab. Please use the IPTVMine Desktop application window."
-    );
+    return invokeTvFallback<T>(cmd, args);
   }
   return tauriInvoke<T>(cmd, args);
 }

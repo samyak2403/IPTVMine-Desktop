@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import {
   AlertCircle,
   ArrowDownCircle,
@@ -13,7 +12,7 @@ import {
   RotateCw,
   Trash2,
 } from "lucide-react";
-import { api } from "../api";
+import { api, safeListen } from "../api";
 import noDownloadsSvg from "../assets/illustrations/no_downloads.svg";
 import type { DownloadTask, PlaybackRequest } from "../types";
 
@@ -256,7 +255,7 @@ export function DownloadsView({ onPlayLocal, onTasksChange, onBrowseMovies }: Pr
       .catch(() => {});
 
     let unlisten: (() => void) | undefined;
-    void listen<DownloadTask>("downloads://progress", (e) => {
+    void safeListen<DownloadTask>("downloads://progress", (e) => {
       const updated = e.payload;
       setTasks((prev) => {
         const exists = prev.some((t) => t.id === updated.id);

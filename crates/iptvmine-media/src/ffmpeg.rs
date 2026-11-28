@@ -181,6 +181,36 @@ fn resolve_candidate(custom_path: Option<&str>) -> Option<(PathBuf, Option<PathB
         }
     }
 
+    #[cfg(target_os = "macos")]
+    {
+        for dir in [
+            PathBuf::from("/opt/homebrew/bin"),
+            PathBuf::from("/usr/local/bin"),
+            PathBuf::from("/opt/local/bin"),
+        ] {
+            let exe = dir.join(&ffmpeg_name);
+            if exe.is_file() {
+                let probe = find_sibling_ffprobe(&exe).or_else(|| find_in_path("ffprobe"));
+                return Some((exe, probe, "system"));
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        for dir in [
+            PathBuf::from("/usr/bin"),
+            PathBuf::from("/usr/local/bin"),
+            PathBuf::from("/snap/bin"),
+        ] {
+            let exe = dir.join(&ffmpeg_name);
+            if exe.is_file() {
+                let probe = find_sibling_ffprobe(&exe).or_else(|| find_in_path("ffprobe"));
+                return Some((exe, probe, "system"));
+            }
+        }
+    }
+
     None
 }
 

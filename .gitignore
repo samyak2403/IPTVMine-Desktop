@@ -14,10 +14,15 @@
 *.AppImage
 *.deb
 *.rpm
+*.ipk
+*.wgt
+/tv-stage/
+/tv-dist/
 
 # Node / Vite / TypeScript
 **/node_modules/
 /ui/dist/
+/ui/dist-tv/
 /ui/dist-ssr/
 *.tsbuildinfo
 .vite/

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { Play, RefreshCw } from "lucide-react";
-import { api, isTauriRuntime } from "./api";
+import { api, isTauriRuntime, safeListen } from "./api";
 import { ChannelLogo } from "./components/ChannelLogo";
 import { formatOttTitle, HeroMarquee, MidBanner, OttCarousel, type OttCardItem } from "./components/OttUi";
 import { DownloadsView } from "./screens/DownloadsView";
@@ -130,6 +129,8 @@ export function App() {
 
   // Active full-screen playback overlay
   const [activePlayback, setActivePlayback] = useState<PlaybackRequest | null>(null);
+  const activePlaybackRef = useRef<PlaybackRequest | null>(null);
+  activePlaybackRef.current = activePlayback;
 
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
@@ -149,8 +150,110 @@ export function App() {
   }, [settings.blackTheme]);
 
   useEffect(() => {
+    if (isTauriRuntime()) return;
+    document.documentElement.dataset.tv = "true";
+
+    const w = window as unknown as {
+      tizen?: { tvinputdevice?: { registerKeyBatch?: (keys: string[]) => void } };
+    };
+    try {
+      w.tizen?.tvinputdevice?.registerKeyBatch?.(["MediaPlay", "MediaPause", "Return"]);
+    } catch {
+      // Ignore on non-Tizen runtimes
+    }
+
+    const FOCUS_SELECTOR =
+      'button:not(:disabled), [href], input:not([type="hidden"]):not(:disabled), select:not(:disabled), label[tabindex="0"], [tabindex="0"]';
+
+    const getFocusables = () =>
+      Array.from(document.querySelectorAll<HTMLElement>(FOCUS_SELECTOR)).filter((el) => {
+        if (el.closest('[aria-hidden="true"]')) return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+
+    const onTvKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || activePlaybackRef.current) return;
+
+      // webOS Back (461) / Tizen Return (10009) / GoBack
+      if (e.keyCode === 461 || e.keyCode === 10009 || e.key === "GoBack" || e.key === "XF86Back") {
+        e.preventDefault();
+        setRoute((prev) => (prev === "movie-detail" ? "movies" : "home"));
+        return;
+      }
+
+      const active = document.activeElement as HTMLElement | null;
+      const tag = active?.tagName ?? "";
+      if ((tag === "INPUT" || tag === "TEXTAREA") && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+        return;
+      }
+      if (tag === "SELECT" && (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "Enter")) {
+        return;
+      }
+
+      if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+        if (e.key === "Enter" && active?.tagName === "LABEL") {
+          active.click();
+        }
+        return;
+      }
+
+      const items = getFocusables();
+      if (items.length === 0) return;
+
+      e.preventDefault();
+      if (!active || active === document.body || !items.includes(active)) {
+        items[0].focus();
+        return;
+      }
+
+      const cur = active.getBoundingClientRect();
+      const cx = cur.left + cur.width / 2;
+      const cy = cur.top + cur.height / 2;
+
+      let best: HTMLElement | null = null;
+      let bestScore = Infinity;
+
+      for (const cand of items) {
+        if (cand === active) continue;
+        const r = cand.getBoundingClientRect();
+        const tx = r.left + r.width / 2;
+        const ty = r.top + r.height / 2;
+        const dx = tx - cx;
+        const dy = ty - cy;
+
+        const inDir =
+          (e.key === "ArrowRight" && dx > 4) ||
+          (e.key === "ArrowLeft" && dx < -4) ||
+          (e.key === "ArrowDown" && dy > 4) ||
+          (e.key === "ArrowUp" && dy < -4);
+        if (!inDir) continue;
+
+        const primary = e.key === "ArrowLeft" || e.key === "ArrowRight" ? Math.abs(dx) : Math.abs(dy);
+        const ortho = e.key === "ArrowLeft" || e.key === "ArrowRight" ? Math.abs(dy) : Math.abs(dx);
+        const score = primary + ortho * 2.5;
+        if (score < bestScore) {
+          bestScore = score;
+          best = cand;
+        }
+      }
+
+      if (best) {
+        best.focus({ preventScroll: true });
+        best.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+      }
+    };
+
+    window.addEventListener("keydown", onTvKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onTvKeyDown);
+      delete document.documentElement.dataset.tv;
+    };
+  }, []);
+
+  useEffect(() => {
     let unlisten: (() => void) | undefined;
-    void listen<FfmpegStatus>("ffmpeg://status", (e) => {
+    void safeListen<FfmpegStatus>("ffmpeg://status", (e) => {
       setFfmpegStatus(e.payload);
       setInstallingFfmpeg(Boolean(e.payload.installing));
     }).then((fn) => {
@@ -832,8 +935,8 @@ export function App() {
             </div>
           )}
           {!isTauriRuntime() && (
-            <div className="ott-status-pill" style={{ color: "var(--status-error)" }}>
-              Browser mode • Native Tauri window required
+            <div className="ott-status-pill" style={{ color: "var(--accent-amber)" }}>
+              Smart TV / Web Mode • Direct M3U &amp; HLS
             </div>
           )}
           {initError && (

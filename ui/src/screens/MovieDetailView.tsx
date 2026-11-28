@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { ArrowLeft, Calendar, Clock, Download, Film, HardDrive, Play, Star } from "lucide-react";
-import { api } from "../api";
+import { api, safeListen } from "../api";
 import { formatOttTitle } from "../components/OttUi";
 import { extractRichCardMeta, type RichCardMeta } from "../utils/mediaBadges";
 import playCircleSvg from "../assets/drawable/play-circle.svg";
@@ -137,7 +136,7 @@ export function MovieDetailView({ post, scraperValue, onBack, onPlayStream }: Pr
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    void listen<string>("vega://fallback_status", (e) => {
+    void safeListen<string>("vega://fallback_status", (e) => {
       setFallbackStatus(e.payload);
     }).then((fn) => {
       unlisten = fn;

@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Film,
   Keyboard,
+  Monitor,
   Radio,
   RefreshCw,
   ShieldCheck,
@@ -121,6 +122,17 @@ export function AboutView({
     },
   ];
 
+  const platforms = [
+    { name: "Windows x64", arch: "x86_64", pkg: ".msi / .exe (NSIS)", status: "Stable" },
+    { name: "Windows ARM64", arch: "aarch64", pkg: ".exe (NSIS)", status: "Stable" },
+    { name: "macOS Universal", arch: "Intel + Apple Silicon", pkg: ".dmg / .app", status: "Stable" },
+    { name: "Linux Debian / Ubuntu x64", arch: "x86_64", pkg: ".deb", status: "Stable" },
+    { name: "Linux RPM x64", arch: "x86_64", pkg: ".rpm (Fedora / RHEL / openSUSE)", status: "Stable" },
+    { name: "Linux AppImage x64", arch: "x86_64", pkg: ".AppImage (Portable)", status: "Stable" },
+    { name: "LG webOS 23+", arch: "Smart TV Web App", pkg: ".ipk + D-pad navigation", status: "Experimental" },
+    { name: "Samsung Tizen TV 8.0+", arch: "Smart TV Widget", pkg: ".wgt + remote support", status: "Experimental" },
+  ] as const;
+
   return (
     <section className="pref-screen" aria-labelledby={headingId}>
       <header className="pref-header">
@@ -202,6 +214,36 @@ export function AboutView({
               <div className="pref-row-copy">
                 <div className="pref-row-title">{cap.title}</div>
                 <div className="pref-row-desc">{cap.desc}</div>
+              </div>
+              <span aria-hidden="true" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="pref-section">
+        <div className="pref-section-label">Supported Platform Architectures</div>
+        <div className="pref-group">
+          {platforms.map((plat) => (
+            <div key={plat.name} className="pref-row">
+              <div
+                className={`pref-row-icon ${plat.status === "Stable" ? "is-active" : ""}`}
+                aria-hidden="true"
+              >
+                {plat.arch.startsWith("Smart TV") ? <Tv size={18} /> : <Monitor size={18} />}
+              </div>
+              <div className="pref-row-copy">
+                <div className="pref-row-head">
+                  <span className="pref-row-title">{plat.name}</span>
+                  <span
+                    className={`ott-meta-pill ${plat.status === "Experimental" ? "amber" : ""}`}
+                  >
+                    {plat.status}
+                  </span>
+                </div>
+                <div className="pref-row-desc">
+                  {plat.arch} • {plat.pkg}
+                </div>
               </div>
               <span aria-hidden="true" />
             </div>

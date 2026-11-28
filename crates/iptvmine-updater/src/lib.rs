@@ -143,7 +143,7 @@ pub fn select_platform_asset_for<'a>(
     let preferred_exts: &[&str] = match os {
         "windows" => &[".msi", ".exe"],
         "macos" => &[".dmg", ".app.tar.gz"],
-        _ => &[".appimage", ".deb"],
+        _ => &[".appimage", ".deb", ".rpm"],
     };
 
     for ext in preferred_exts {
@@ -228,6 +228,52 @@ mod tests {
             select_platform_asset_for(&assets, "windows", "x86_64")
                 .map(|a| a.name.as_str()),
             Some("IPTVMine Desktop_0.2.0_x64_en-US.msi")
+        );
+    }
+
+    #[test]
+    fn selects_macos_and_linux_deb_rpm_appimage_assets() {
+        let dmg = GithubAsset {
+            name: "IPTVMine Desktop_0.2.0_universal.dmg".into(),
+            browser_download_url: "https://example.com/universal.dmg".into(),
+            size: 100,
+            content_type: None,
+        };
+        let deb = GithubAsset {
+            name: "IPTVMine Desktop_0.2.0_amd64.deb".into(),
+            browser_download_url: "https://example.com/amd64.deb".into(),
+            size: 100,
+            content_type: None,
+        };
+        let rpm = GithubAsset {
+            name: "IPTVMine Desktop-0.2.0-1.x86_64.rpm".into(),
+            browser_download_url: "https://example.com/x86_64.rpm".into(),
+            size: 100,
+            content_type: None,
+        };
+        let appimage = GithubAsset {
+            name: "IPTVMine Desktop_0.2.0_amd64.AppImage".into(),
+            browser_download_url: "https://example.com/amd64.AppImage".into(),
+            size: 100,
+            content_type: None,
+        };
+
+        assert_eq!(
+            select_platform_asset_for(&[dmg.clone()], "macos", "aarch64").map(|a| a.name.as_str()),
+            Some("IPTVMine Desktop_0.2.0_universal.dmg")
+        );
+        assert_eq!(
+            select_platform_asset_for(&[rpm.clone(), deb.clone(), appimage.clone()], "linux", "x86_64")
+                .map(|a| a.name.as_str()),
+            Some("IPTVMine Desktop_0.2.0_amd64.AppImage")
+        );
+        assert_eq!(
+            select_platform_asset_for(&[rpm.clone(), deb], "linux", "x86_64").map(|a| a.name.as_str()),
+            Some("IPTVMine Desktop_0.2.0_amd64.deb")
+        );
+        assert_eq!(
+            select_platform_asset_for(&[rpm], "linux", "x86_64").map(|a| a.name.as_str()),
+            Some("IPTVMine Desktop-0.2.0-1.x86_64.rpm")
         );
     }
 }

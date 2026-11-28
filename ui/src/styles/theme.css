@@ -4739,3 +4739,11 @@ textarea {
     animation: none;
   }
 }
+
+/* ── Smart TV (webOS & Tizen) D-pad Focus Highlight ──────────────────────── */
+
+[data-tv="true"] :focus-visible {
+  outline: 3px solid var(--accent-amber);
+  outline-offset: 4px;
+  box-shadow: 0 0 0 6px rgba(255, 192, 98, 0.22);
+}

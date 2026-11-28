@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import Hls from "hls.js";
 import {
   ArrowLeft,
@@ -24,7 +23,7 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
-import { api } from "../api";
+import { api, isTauriRuntime, safeListen } from "../api";
 import { ChannelLogo } from "../components/ChannelLogo";
 import type {
   FfmpegStatus,
@@ -374,7 +373,7 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    void listen<FfmpegStatus>("ffmpeg://status", (e) => {
+    void safeListen<FfmpegStatus>("ffmpeg://status", (e) => {
       setFfmpegStatus(e.payload);
       setInstallingFfmpeg(Boolean(e.payload.installing));
       if (e.payload.installed && waitingForFfmpegRef.current) {
@@ -667,7 +666,7 @@ export function PlayerView({ request, ffmpegEnabled = true, onClose, onEpisodeRe
         (confirmedHls || (!confirmedDirectContainer && Boolean(request.isLive)))
       ) {
         const hls = new Hls({
-          enableWorker: true,
+          enableWorker: isTauriRuntime(),
           lowLatencyMode: false,
           maxBufferLength: 30,
           maxMaxBufferLength: 60,
